@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "640858425141",
+    "project_id": "anki-shared-c263b",
+    "storage_bucket": "anki-shared-c263b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:640858425141:android:ca3e8e4c69d2a54aa22e7c",
+        "android_client_info": {
+          "package_name": "com.example.anki_flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMlxMWDHYsydtO0JWxQzI3LAWrfrW9yDA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

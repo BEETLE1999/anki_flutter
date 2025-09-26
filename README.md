@@ -16,6 +16,9 @@ For help getting started with Flutter development, view the
 samples, guidance on mobile development, and a full API reference.
 
 
+## コマンドメモ
+
+flutter pub run build_runner build
 
 
 ## 2. 画面（Flutter）

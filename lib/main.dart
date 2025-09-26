@@ -5,10 +5,13 @@ import 'data/local/entities/deck_entity.dart';
 import 'data/local/entities/flashcard_entity.dart';
 import 'data/local/hive_init.dart';
 import 'features/decks/deck_list_page.dart';
+import 'firebase_options.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(); // google-services.json / plist 必須
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   await initHive();
 
   runApp(const AnkiApp());
