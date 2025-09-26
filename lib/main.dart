@@ -1,8 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:hive_flutter/adapters.dart';
-import 'data/local/entities/deck_entity.dart';
-import 'data/local/entities/flashcard_entity.dart';
+import 'package:flutter/material.dart';
+
+import 'core/theme/app_theme.dart';
 import 'data/local/hive_init.dart';
 import 'features/decks/deck_list_page.dart';
 import 'firebase_options.dart';
@@ -23,10 +22,7 @@ class AnkiApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Anki',
-      theme: ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: const Color(0xFF137D5D),
-      ),
+      theme: AppTheme.light,
       home: const DeckListPage(),
     );
   }

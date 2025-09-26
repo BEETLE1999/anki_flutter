@@ -1,15 +1,16 @@
 // lib/features/flashcards/flashcard_page.dart
 import 'package:flutter/material.dart';
+
+import '../../core/constants/app_enum.dart';
+import '../../core/theme/app_colors.dart';
 import '../decks/deck.dart';
 import 'flashcard.dart';
-import 'widgets/flip_card.dart';
+import 'widgets/flashcard_bottom_nav.dart';
+import 'widgets/flashcard_surface.dart';
+import 'widgets/progress_bar_with_controls.dart';
 
 class FlashcardPage extends StatefulWidget {
-  const FlashcardPage({
-    super.key,
-    required this.deck,
-    required this.cards,
-  });
+  const FlashcardPage({super.key, required this.deck, required this.cards});
 
   final Deck deck;
   final List<Flashcard> cards;
@@ -22,262 +23,278 @@ class _FlashcardPageState extends State<FlashcardPage> {
   int index = 0;
   int known = 0;
   int unknown = 0;
-  // スワイプ判定用
-  static const _swipeThreshold = 90.0;
+  // 文字スケール（0.8 ～ 1.6 の範囲で調整予定）
+  double _textScale = 1.0;
 
-  void _next({required bool markKnown}) {
+  // 既読・ブックマーク管理（card.id を想定）
+  final Set<String> readIds = {};
+  final Set<String> bookmarkIds = {};
+
+  CardFilter filter = CardFilter.all;
+
+  // Carousel 用コントローラ（初期表示位置を index に合わせる）
+  late CarouselController _carouselController;
+
+  @override
+  void initState() {
+    super.initState();
+    _carouselController = CarouselController(initialItem: index);
+  }
+
+  @override
+  void dispose() {
+    _carouselController.dispose();
+    super.dispose();
+  }
+
+  List<Flashcard> get _filteredCards {
+    switch (filter) {
+      case CardFilter.unread:
+        return widget.cards.where((c) => !readIds.contains(c.id)).toList();
+      case CardFilter.bookmarked:
+        return widget.cards.where((c) => bookmarkIds.contains(c.id)).toList();
+      case CardFilter.all:
+      default:
+        return widget.cards;
+    }
+  }
+
+  // フィルタ後の長さに合わせて index を安全化
+  int get _safeIndex {
+    final total = _filteredCards.length;
+    if (total == 0) return 0;
+    return index.clamp(0, total - 1);
+  }
+
+  Flashcard? get _currentOrNull {
+    final cards = _filteredCards;
+    if (cards.isEmpty) return null;
+    return cards[_safeIndex];
+  }
+
+  void _prev() {
+    final total = _filteredCards.length;
+    if (_safeIndex > 0) {
+      final nextIdx = (_safeIndex - 1).clamp(0, total - 1);
+      setState(() => index = nextIdx);
+      _carouselController.animateToItem(nextIdx);
+    }
+  }
+
+  void _next() {
+    final total = _filteredCards.length;
+    if (_safeIndex < total - 1) {
+      final nextIdx = (_safeIndex + 1).clamp(0, total - 1);
+      setState(() => index = nextIdx);
+      _carouselController.animateToItem(nextIdx);
+    }
+  }
+
+  void _toggleBookmark(String cardId) {
     setState(() {
-      if (markKnown) {
-        known++;
+      if (bookmarkIds.contains(cardId)) {
+        bookmarkIds.remove(cardId);
       } else {
-        unknown++;
+        bookmarkIds.add(cardId);
       }
-      if (index < widget.cards.length - 1) {
-        index++;
-      } else {
-        _showResult();
-      }
+      // フィルタで外れた場合も index は _safeIndex が守ってくれる
+      index = _safeIndex;
     });
   }
 
-  void _showResult() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        final total = widget.cards.length;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24 + 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.flag_circle, size: 48),
-              const SizedBox(height: 8),
-              Text('学習完了', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Text('合計 $total 枚 / 既知 $known / 要復習 $unknown'),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        setState(() {
-                          index = 0;
-                          known = 0;
-                          unknown = 0;
-                        });
-                      },
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('もう一度'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.check),
-                      label: const Text('閉じる'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
+  void _toggleCompleted(String cardId) {
+    setState(() {
+      if (readIds.contains(cardId)) {
+        readIds.remove(cardId);
+      } else {
+        readIds.add(cardId);
+      }
+      // 既読トグルで未読フィルタから外れる可能性があるので安全化
+      index = _safeIndex;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final card = widget.cards[index];
+    final cards = _filteredCards;
+    final total = cards.length;
+    final viewportWidth = MediaQuery.of(context).size.width;
+    final itemExtent = viewportWidth * 0.92;
+
+    // フィルタ後カードが 0 の時のプレースホルダ
+    if (cards.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.deck.title, style: const TextStyle(fontSize: 24)),
+          centerTitle: true,
+          actions: [
+            // 空リスト時でも設定は開ける
+            IconButton(
+              tooltip: '設定',
+              onPressed: _openSettings,
+              icon: const Icon(Icons.settings),
+            ),
+          ],
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(1),
+            child: Divider(height: 1, thickness: 1, color: AppColors.border),
+          ),
+        ),
+        body: Center(
+          child: Text(switch (filter) {
+            CardFilter.unread => '未読のカードはありません',
+            CardFilter.bookmarked => 'ブックマークしたカードはありません',
+            _ => 'カードがありません',
+          }),
+        ),
+        bottomNavigationBar: FlashcardBottomNav(
+          filter: filter,
+          onChanged: (f) => setState(() {
+            filter = f;
+            index = 0;
+            // 表示先頭へ
+            _carouselController = CarouselController(initialItem: 0);
+          }),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.deck.title),
+        title: Text(widget.deck.title, style: const TextStyle(fontSize: 24)),
+        centerTitle: true,
         actions: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text('${index + 1}/${widget.cards.length}'),
-            ),
+          IconButton(
+            tooltip: '設定',
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings),
           ),
         ],
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, thickness: 1, color: AppColors.border),
+        ),
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-          child: Column(
-            children: [
-              // 進捗バー
-              LinearProgressIndicator(
-                value: (index + 1) / widget.cards.length,
-                minHeight: 6,
-              ),
-              const SizedBox(height: 16),
-
-              // カード（タップで反転、スワイプで既知/未知）
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return Dismissible(
-                      key: ValueKey(card.id),
-                      direction: DismissDirection.horizontal,
-                      dismissThresholds: const {
-                        DismissDirection.startToEnd: 0.2,
-                        DismissDirection.endToStart: 0.2,
-                      },
-                      onUpdate: (details) {
-                        // しきい値超え時に軽くバイブ等（必要なら）
-                      },
-                      onDismissed: (direction) {
-                        final isKnown =
-                            direction == DismissDirection.startToEnd;
-                        _next(markKnown: isKnown);
-                      },
-                      background: _SwipeBg(
-                        icon: Icons.thumb_up_alt,
-                        alignLeft: true,
-                        label: 'わかった',
-                      ),
-                      secondaryBackground: const _SwipeBg(
-                        icon: Icons.replay_circle_filled,
-                        alignLeft: false,
-                        label: '要復習',
-                      ),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: constraints.maxWidth * 0.92,
-                            maxHeight: constraints.maxHeight * 0.8,
-                          ),
-                          child: _FlashcardSurface(
-                            front: card.front,
-                            back: card.back,
+      body: Container(
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(width: 1, color: AppColors.border)),
+        ),
+        child: Column(
+          children: [
+            // --- カルーセル本体 ---
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 32, 16, 0),
+                // Scroll 通知から “現在インデックス” を推定して同期
+                child: NotificationListener<ScrollEndNotification>(
+                  onNotification: (n) {
+                    final metrics = n.metrics;
+                    // itemExtent ベースで最寄りのインデックスに丸める
+                    final estimated = (metrics.pixels / itemExtent)
+                        .round()
+                        .clamp(0, total - 1);
+                    if (estimated != index) {
+                      setState(() => index = estimated);
+                    }
+                    return false;
+                  },
+                  child: CarouselView(
+                    controller: _carouselController,
+                    itemExtent: itemExtent,
+                    shrinkExtent: itemExtent,
+                    itemSnapping: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 0),
+                    enableSplash: false,
+                    children: [
+                      for (final c in cards)
+                        Center(
+                          child: FlashcardSurface(
+                            card: c,
+                            textScale: _textScale,
+                            isBookmarked: bookmarkIds.contains(c.id),
+                            completed: readIds.contains(c.id),
+                            onBookmarkTap: () => _toggleBookmark(c.id),
+                            onCompletedTap: () => _toggleCompleted(c.id),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                    ],
+                  ),
                 ),
               ),
+            ),
+            ProgressBarWithControls(
+              index: _safeIndex,
+              total: total,
+              onPrev: _prev,
+              onNext: _next,
+              onChanged: (i) {
+                final to = i.clamp(0, total - 1);
+                setState(() => index = to);
+                _carouselController.animateToItem(to);
+              },
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: FlashcardBottomNav(
+        filter: filter,
+        onChanged: (f) {
+          setState(() {
+            filter = f;
+            index = 0; // タブ切替時は先頭に戻す
+            // 先頭から表示（新しい initialItem で作り直すのが確実）
+            _carouselController = CarouselController(initialItem: 0);
+          });
+        },
+      ),
+    );
+  }
 
-              // ボタン操作（左右スワイプと同じ）
-              const SizedBox(height: 12),
-              Row(
+  // 設定ボトムシート
+  Future<void> _openSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      isScrollControlled: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setInner) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _next(markKnown: false),
-                      icon: const Icon(Icons.replay),
-                      label: const Text('要復習'),
-                    ),
+                  Text('表示設定', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text('カード文字サイズ'),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Slider(
+                          min: 0.8,
+                          max: 1.6,
+                          divisions: 8, // 0.1刻み
+                          value: _textScale,
+                          label: _textScale.toStringAsFixed(1),
+                          onChanged: (v) {
+                            // ボトムシート側の即時プレビュー
+                            setInner(() => _textScale = v);
+                            // ページ全体にも反映
+                            setState(() {});
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () => _next(markKnown: true),
-                      icon: const Icon(Icons.thumb_up),
-                      label: const Text('わかった'),
-                    ),
-                  ),
+                  const SizedBox(height: 16),
                 ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FlashcardSurface extends StatelessWidget {
-  const _FlashcardSurface({required this.front, required this.back});
-
-  final String front;
-  final String back;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return FlipCard(
-      front: _CardFace(
-        key: const ValueKey('front'),
-        child: Text(
-          front,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall,
-        ),
-      ),
-      back: _CardFace(
-        key: const ValueKey('back'),
-        child: Text(
-          back,
-          textAlign: TextAlign.center,
-          style: theme.textTheme.headlineSmall,
-        ),
-      ),
-    );
-  }
-}
-
-class _CardFace extends StatelessWidget {
-  const _CardFace({super.key, required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Center(child: child),
-      ),
-    );
-  }
-}
-
-class _SwipeBg extends StatelessWidget {
-  const _SwipeBg({
-    required this.icon,
-    required this.alignLeft,
-    required this.label,
-  });
-
-  final IconData icon;
-  final bool alignLeft;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final align =
-    alignLeft ? Alignment.centerLeft : Alignment.centerRight;
-    final pad = alignLeft
-        ? const EdgeInsets.only(left: 20)
-        : const EdgeInsets.only(right: 20);
-
-    return Container(
-      alignment: align,
-      padding: pad,
-      color: alignLeft
-          ? Colors.green.withOpacity(0.15)
-          : Colors.orange.withOpacity(0.15),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!alignLeft) Text(label),
-          const SizedBox(width: 8),
-          Icon(icon),
-          if (alignLeft) ...[
-            const SizedBox(width: 8),
-            Text(label),
-          ],
-        ],
-      ),
+            );
+          },
+        );
+      },
     );
   }
 }

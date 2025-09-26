@@ -1,13 +1,11 @@
-// lib/features/decks/widgets/deck_tile.dart
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
+import '../../../core/constants/app_enum.dart';
+import '../../../core/theme/app_colors.dart';
 import '../deck.dart';
 
 class DeckTile extends StatelessWidget {
-  const DeckTile({
-    super.key,
-    required this.deck,
-    required this.onTap,
-  });
+  const DeckTile({super.key, required this.deck, required this.onTap});
 
   final Deck deck;
   final VoidCallback onTap;
@@ -18,53 +16,63 @@ class DeckTile extends StatelessWidget {
     final dateStr =
         '${deck.updatedAt.year}/${deck.updatedAt.month.toString().padLeft(2, '0')}/${deck.updatedAt.day.toString().padLeft(2, '0')}';
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 22,
-                child: Text(
-                  deck.cardCount.toString(),
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.onPrimaryContainer,
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 14, 0, 14),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.border, width: 1)),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    deck.title,
+                    // "テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳",
+                    style: theme.textTheme.titleLarge,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(deck.title,
-                        style: theme.textTheme.titleMedium,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 4),
-                    Text(
-                      deck.description,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.textTheme.bodySmall?.color,
+                  const SizedBox(height: 8),
+                  // Text('最終更新: $dateStr', style: theme.textTheme.labelSmall),
+                  Row(
+                    children: [
+                      Icon(Symbols.note_stack, size: 20),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 2, right: 12),
+                        child: Text('30'),
                       ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '最終更新: $dateStr',
-                      style: theme.textTheme.labelSmall,
-                    ),
-                  ],
-                ),
+                      Icon(
+                        Symbols.check_circle,
+                        size: 20,
+                        fill: IconFill.filled.value,
+                        color: theme.colorScheme.primary,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 2, right: 8),
+                        child: Text('45%'),
+                      ),
+                      Icon(
+                        Symbols.bookmark,
+                        size: 20,
+                        fill: IconFill.filled.value,
+                        color: theme.colorScheme.primary,
+                      ),
+                      Text('30'),
+                    ],
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right),
-            ],
-          ),
+            ),
+            const Icon(
+              Icons.chevron_right,
+              size: 30,
+              color: AppColors.textPrimary,
+            ),
+          ],
         ),
       ),
     );
