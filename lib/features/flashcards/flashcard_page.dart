@@ -23,7 +23,6 @@ class _FlashcardPageState extends State<FlashcardPage> {
   int index = 0;
   int known = 0;
   int unknown = 0;
-  // 文字スケール（0.8 ～ 1.6 の範囲で調整予定）
   double _textScale = 1.0;
 
   // 既読・ブックマーク管理（card.id を想定）
@@ -273,8 +272,8 @@ class _FlashcardPageState extends State<FlashcardPage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Slider(
-                          min: 0.8,
-                          max: 1.6,
+                          min: 0.6,
+                          max: 1.4,
                           divisions: 8, // 0.1刻み
                           value: _textScale,
                           label: _textScale.toStringAsFixed(1),
