@@ -1,4 +1,7 @@
 // lib/features/decks/deck_list_page.dart
+
+import 'package:anki_flutter/features/decks/scan_import_page.dart';
+import 'package:anki_flutter/features/decks/widgets/scan_intro_dialog.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -24,51 +27,17 @@ class _DeckListPageState extends State<DeckListPage> {
   final _localRepo = HiveDeckRepository();
   final _remoteRepo = DeckRepository();
 
-  // 画面状態（ダミーの認証情報。実装時はFirebase Auth等で置き換え）
-  bool _signedIn = false;
-  String? _userEmail = 't3n.gathering@gmail.com';
-
   @override
   void initState() {
     super.initState();
-    // ログイン状態に応じて非同期データソースを切り替え
-    _future = _signedIn
-        ? _localRepo.fetchDecks()
-        : Future.value(const <Deck>[]);
+    // いつでもローカルを表示
+    _future = _localRepo.fetchDecks();
   }
 
   Future<void> _reload() async {
     final next = _localRepo.fetchDecks();
     setState(() => _future = next);
     await next;
-  }
-
-  Future<void> _promptImportId() async {
-    final controller = TextEditingController();
-    final importId = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Import ID を入力'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            hintText: '例: AbCDefGhijklMNopQRsT',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    if (importId == null || importId.isEmpty) return;
-    await _importAndOpen(importId);
   }
 
   Future<void> _importAndOpen(String deckId) async {
@@ -87,16 +56,14 @@ class _DeckListPageState extends State<DeckListPage> {
       setState(() {
         _future = _localRepo.fetchDecks();
       });
-
-      if (!mounted) return;
-      Navigator.of(context).pop();
     } catch (e) {
       if (mounted) {
-        Navigator.of(context).pop();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('取り込みに失敗: $e')));
       }
+    } finally {
+      if (mounted) Navigator.of(context).pop();
     }
   }
 
@@ -107,32 +74,23 @@ class _DeckListPageState extends State<DeckListPage> {
         centerTitle: true,
         title: const Text('単語帳', style: TextStyle(fontSize: 28)),
         actions: [
-          // アカウントボタン（ログイン中はダイアログ、未ログインはログイン実行）
-          if (_signedIn)
-            IconButton(
-              tooltip: 'アカウント',
-              onPressed: _showAccountDialog,
-              icon: const Icon(Icons.account_circle_outlined),
-            ),
-          // ログイン中のみ取り込みボタン
-          if (_signedIn)
-            IconButton(
-              tooltip: 'Import ID から取り込み',
-              onPressed: _promptImportId,
-              icon: const Icon(Icons.download),
-            ),
+          IconButton(
+            tooltip: 'インポート',
+            onPressed: () => _scanAndImport(context),
+            // icon: const Icon(Icons.qr_code_scanner),
+            icon: const Icon(Icons.download),
+          ),
         ],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
           child: Divider(height: 1, thickness: 1, color: AppColors.border),
         ),
       ),
-      body: _signedIn ? _signedInBody() : _signedOutBody(),
+      body: _body(),
     );
   }
 
-  /// ログイン中の一覧表示
-  Widget _signedInBody() {
+  Widget _body() {
     return RefreshIndicator(
       onRefresh: _reload,
       child: FutureBuilder<List<Deck>>(
@@ -165,33 +123,6 @@ class _DeckListPageState extends State<DeckListPage> {
     );
   }
 
-  /// 未ログイン時のプレースホルダー
-  Widget _signedOutBody() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.lock_outline,
-              size: 64,
-              color: AppColors.sacredGreen,
-            ),
-            const SizedBox(height: 12),
-            const Text('ログインすると単語帳を表示できます', textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              icon: const Icon(Icons.login),
-              label: const Text('ログイン'),
-              onPressed: _login,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _openDeck(Deck deck) async {
     showDialog(
       context: context,
@@ -201,10 +132,8 @@ class _DeckListPageState extends State<DeckListPage> {
 
     try {
       final cards = await _fetchCardsFor(deck);
-
       if (!mounted) return;
       Navigator.of(context).pop();
-
       await Navigator.of(
         context,
       ).push(slideFromRight(FlashcardPage(deck: deck, cards: cards)));
@@ -234,73 +163,25 @@ class _DeckListPageState extends State<DeckListPage> {
     );
   }
 
-  // ダミーのログイン・ログアウト（本実装に差し替え）
-  Future<void> _login() async {
-    setState(() {
-      _signedIn = true;
-      _userEmail = 't3n.gathering@gmail.com'; // 実装時は認証結果で設定
-      _future = _localRepo.fetchDecks(); // ログイン後に一覧ロード
-    });
-    if (!mounted) return;
-    ScaffoldMessenger.of(
+  /// スキャン → import
+  // Future<void> _scanAndImport() async {
+  //   final importId = await Navigator.of(
+  //     context,
+  //   ).push<String>(MaterialPageRoute(builder: (_) => const ScanImportPage()));
+  //   if (importId == null || importId.isEmpty) return;
+  //
+  //   await _importAndOpen(importId);
+  // }
+  Future<void> _scanAndImport(BuildContext context) async {
+    // ダイアログを表示
+    final proceed = await ScanIntroDialog.show(context);
+    if (proceed != true) return;
+    if (!context.mounted) return;
+    // カメラ起動
+    final importId = await Navigator.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('ログイン（未実装）')));
-  }
-
-  Future<void> _logout() async {
-    setState(() {
-      _signedIn = false;
-      _userEmail = null;
-      _future = Future.value(const <Deck>[]); // ログアウト後は空に
-    });
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('ログアウト（未実装）')));
-  }
-
-  // アカウントダイアログ（メール表示＋ログアウト）
-  Future<void> _showAccountDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('アカウント'),
-          actionsAlignment: MainAxisAlignment.spaceBetween,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.account_circle_outlined,
-                size: 56,
-                color: AppColors.sacredGreen,
-              ),
-              const SizedBox(height: 12),
-              Text(_userEmail ?? '(メール未取得)'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text(
-                '閉じる',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            TextButton.icon(
-              icon: const Icon(Icons.logout),
-              label: const Text(
-                'ログアウト',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              onPressed: () {
-                Navigator.of(context).pop(); // 先に閉じる
-                _logout(); // 既存の処理呼び出し
-              },
-            ),
-          ],
-        );
-      },
-    );
+    ).push<String>(MaterialPageRoute(builder: (_) => const ScanImportPage()));
+    if (importId == null || importId.isEmpty) return;
+    await _importAndOpen(importId);
   }
 }
