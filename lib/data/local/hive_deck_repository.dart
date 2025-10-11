@@ -3,7 +3,6 @@ import 'package:hive/hive.dart';
 
 import '../../features/decks/deck.dart';
 import '../../features/flashcards/flashcard.dart';
-import '../repositories/deck_repository.dart';
 import 'entities/deck_entity.dart';
 import 'entities/flashcard_entity.dart';
 import 'hive_init.dart';
@@ -12,7 +11,7 @@ import 'hive_init.dart';
 import 'mappers/deck_mapper.dart';
 import 'mappers/flashcard_mapper.dart';
 
-class HiveDeckRepository implements DeckRepository {
+class HiveDeckRepository {
   // ---- Box open helpers -----------------------------------------------------
   Future<Box<DeckEntity>> _openDeckBox() async {
     if (!Hive.isBoxOpen(HiveBoxes.decks)) {
@@ -29,7 +28,6 @@ class HiveDeckRepository implements DeckRepository {
   }
 
   // ---- API ------------------------------------------------------------------
-  @override
   Future<void> saveDeckWithCards(Deck deck, List<Flashcard> cards) async {
     final deckBox = await _openDeckBox();
     final cardBox = await _openCardBox();
@@ -60,13 +58,11 @@ class HiveDeckRepository implements DeckRepository {
     }
   }
 
-  @override
   Future<List<Deck>> fetchDecks() async {
     final deckBox = await _openDeckBox();
     return deckBox.values.map((e) => e.toModel()).toList();
   }
 
-  @override
   Future<List<Flashcard>> fetchCardsByDeckId(String deckId) async {
     final cardBox = await _openCardBox();
     return cardBox.values
@@ -75,7 +71,6 @@ class HiveDeckRepository implements DeckRepository {
         .toList();
   }
 
-  @override
   Future<void> deleteDeck(String deckId) async {
     final deckBox = await _openDeckBox();
     final cardBox = await _openCardBox();

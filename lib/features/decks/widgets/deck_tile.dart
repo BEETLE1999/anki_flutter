@@ -40,7 +40,24 @@ class DeckTile extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (deck.description.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      deck.description,
+                      // "テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳テスト単語帳",
+                      style: theme.textTheme.labelSmall?.copyWith(fontSize: 12),
+                    ),
+                  ],
                   const SizedBox(height: 4),
+                  Text(
+                    '作成: $dateStr',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+
                   Row(
                     children: [
                       Icon(Symbols.note_stack, size: 20),
@@ -66,14 +83,6 @@ class DeckTile extends StatelessWidget {
                       ),
                       Text('30'),
                     ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '作成: $dateStr',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: 10,
-                      color: AppColors.textSecondary,
-                    ),
                   ),
                 ],
               ),

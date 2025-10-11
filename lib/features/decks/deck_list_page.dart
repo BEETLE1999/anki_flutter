@@ -46,7 +46,6 @@ class _DeckListPageState extends State<DeckListPage> {
     await next;
   }
 
-  // ★ 変更: importId (従来) → ImportKey（uid, nonce）
   Future<void> _importAndOpen(ImportKey key) async {
     showDialog(
       context: context,
@@ -55,23 +54,30 @@ class _DeckListPageState extends State<DeckListPage> {
     );
 
     try {
-      // ✅ 新仕様: imports_active/{uid} から取得 + nonce/期限をリモート側で検証
-      final deck = await _remoteRepo.fetchActiveDeck(
+      // 1) リモート取得（imports_active/{uid}）
+      final remoteDeck = await _remoteRepo.fetchActiveDeck(
         uid: key.uid,
         nonce: key.nonce,
       );
-      final cards = await _remoteRepo.fetchActiveCards(
+      final remoteCards = await _remoteRepo.fetchActiveCards(
         uid: key.uid,
         nonce: key.nonce,
       );
 
-      // ローカルへ保存
-      await _localRepo.saveDeckWithCards(deck, cards);
+      // 2) ローカル専用の新IDを採番（nonceがあれば優先利用して可読性UP）
+      final localDeckId = _makeLocalDeckId(srcUid: key.uid, nonce: key.nonce);
 
-      // 取り違え防止（二重取り込み防止）として、claimed を true にする or サーバ側で削除
-      // 実装ポリシーに合わせてどちらか:
-      await _remoteRepo.claimActiveImport(uid: key.uid); // 推奨：claimed=true
-      // or await _remoteRepo.clearActiveCards(uid: key.uid); // 全削除（任意）
+      // 3) deck.id / card.deckId をローカルIDへ差し替え
+      final localDeck = remoteDeck.copyWith(id: localDeckId);
+      final localCards = remoteCards
+          .map((c) => c.copyWith(deckId: localDeckId))
+          .toList();
+
+      // 4) ローカル保存（同じ deckId が存在しないので “一掃→上書き”は別デッキに影響しない）
+      await _localRepo.saveDeckWithCards(localDeck, localCards);
+
+      // 5) リモートは “受け取り済み”に（削除せず claimed=true 推奨）
+      await _remoteRepo.claimActiveImport(uid: key.uid);
 
       setState(() {
         _future = _localRepo.fetchDecks();
@@ -85,6 +91,20 @@ class _DeckListPageState extends State<DeckListPage> {
     } finally {
       if (mounted) Navigator.of(context).pop();
     }
+  }
+
+  /// ローカル専用のデッキIDを作る（例: 'dk_<uid>_<nonce>' or 'dk_<base36time>_<rand>'）
+  String _makeLocalDeckId({required String srcUid, String? nonce}) {
+    // nonceがあるならそれを使うと“1回の発行＝1つのID”になって可読性が高い
+    if (nonce != null && nonce.isNotEmpty) {
+      return 'dk_${srcUid}_$nonce';
+    }
+    // nonceが無い場合は衝突しない短い一意IDを作る
+    final t = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+    final r = (DateTime.now().microsecondsSinceEpoch % 0xFFFF)
+        .toRadixString(36)
+        .padLeft(4, '0');
+    return 'dk_$t$r';
   }
 
   @override

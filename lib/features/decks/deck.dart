@@ -13,4 +13,20 @@ class Deck {
     required this.cardCount,
     required this.updatedAt,
   });
+
+  Deck copyWith({
+    String? id,
+    String? title,
+    String? description,
+    int? cardCount,
+    DateTime? updatedAt,
+  }) {
+    return Deck(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      cardCount: cardCount ?? this.cardCount,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
 }

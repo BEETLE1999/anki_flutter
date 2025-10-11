@@ -141,7 +141,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
         ),
         body: Center(
           child: Text(switch (filter) {
-            CardFilter.unread => '未読のカードはありません',
+            CardFilter.unread => '未完了のカードはありません',
             CardFilter.bookmarked => 'ブックマークしたカードはありません',
             _ => 'カードがありません',
           }),
