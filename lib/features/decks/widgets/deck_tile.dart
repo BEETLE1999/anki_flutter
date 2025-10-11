@@ -14,7 +14,11 @@ class DeckTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dateStr =
-        '${deck.updatedAt.year}/${deck.updatedAt.month.toString().padLeft(2, '0')}/${deck.updatedAt.day.toString().padLeft(2, '0')}';
+        '${deck.updatedAt.year}/'
+        '${deck.updatedAt.month.toString().padLeft(2, '0')}/'
+        '${deck.updatedAt.day.toString().padLeft(2, '0')} '
+        '${deck.updatedAt.hour.toString().padLeft(2, '0')}:'
+        '${deck.updatedAt.minute.toString().padLeft(2, '0')}';
 
     return InkWell(
       onTap: onTap,
@@ -36,8 +40,7 @@ class DeckTile extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 8),
-                  // Text('最終更新: $dateStr', style: theme.textTheme.labelSmall),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Icon(Symbols.note_stack, size: 20),
@@ -63,6 +66,14 @@ class DeckTile extends StatelessWidget {
                       ),
                       Text('30'),
                     ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '作成: $dateStr',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ],
               ),

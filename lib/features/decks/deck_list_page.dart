@@ -15,6 +15,13 @@ import 'widgets/empty_view.dart';
 import 'widgets/error_view.dart';
 import 'widgets/list_loading.dart';
 
+// 追加: QR結果を正規化するキー
+class ImportKey {
+  final String uid;
+  final String? nonce; // ない場合も許容
+  const ImportKey(this.uid, this.nonce);
+}
+
 class DeckListPage extends StatefulWidget {
   const DeckListPage({super.key});
 
@@ -30,7 +37,6 @@ class _DeckListPageState extends State<DeckListPage> {
   @override
   void initState() {
     super.initState();
-    // いつでもローカルを表示
     _future = _localRepo.fetchDecks();
   }
 
@@ -40,7 +46,8 @@ class _DeckListPageState extends State<DeckListPage> {
     await next;
   }
 
-  Future<void> _importAndOpen(String deckId) async {
+  // ★ 変更: importId (従来) → ImportKey（uid, nonce）
+  Future<void> _importAndOpen(ImportKey key) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -48,10 +55,23 @@ class _DeckListPageState extends State<DeckListPage> {
     );
 
     try {
-      final deck = await _remoteRepo.fetchDeck(deckId);
-      final cards = await _remoteRepo.fetchCards(deckId);
+      // ✅ 新仕様: imports_active/{uid} から取得 + nonce/期限をリモート側で検証
+      final deck = await _remoteRepo.fetchActiveDeck(
+        uid: key.uid,
+        nonce: key.nonce,
+      );
+      final cards = await _remoteRepo.fetchActiveCards(
+        uid: key.uid,
+        nonce: key.nonce,
+      );
+
+      // ローカルへ保存
       await _localRepo.saveDeckWithCards(deck, cards);
-      await _remoteRepo.deleteDeck(deckId);
+
+      // 取り違え防止（二重取り込み防止）として、claimed を true にする or サーバ側で削除
+      // 実装ポリシーに合わせてどちらか:
+      await _remoteRepo.claimActiveImport(uid: key.uid); // 推奨：claimed=true
+      // or await _remoteRepo.clearActiveCards(uid: key.uid); // 全削除（任意）
 
       setState(() {
         _future = _localRepo.fetchDecks();
@@ -72,12 +92,11 @@ class _DeckListPageState extends State<DeckListPage> {
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: const Text('単語帳', style: TextStyle(fontSize: 28)),
+        title: const Text('単語帳一覧', style: TextStyle(fontSize: 28)),
         actions: [
           IconButton(
             tooltip: 'インポート',
             onPressed: () => _scanAndImport(context),
-            // icon: const Icon(Icons.qr_code_scanner),
             icon: const Icon(Icons.download),
           ),
         ],
@@ -164,24 +183,41 @@ class _DeckListPageState extends State<DeckListPage> {
   }
 
   /// スキャン → import
-  // Future<void> _scanAndImport() async {
-  //   final importId = await Navigator.of(
-  //     context,
-  //   ).push<String>(MaterialPageRoute(builder: (_) => const ScanImportPage()));
-  //   if (importId == null || importId.isEmpty) return;
-  //
-  //   await _importAndOpen(importId);
-  // }
   Future<void> _scanAndImport(BuildContext context) async {
-    // ダイアログを表示
+    // 1) 説明ダイアログ
     final proceed = await ScanIntroDialog.show(context);
     if (proceed != true) return;
     if (!context.mounted) return;
-    // カメラ起動
-    final importId = await Navigator.of(
+
+    // 2) カメラ起動（従来どおり文字列を返すと想定）
+    final qrText = await Navigator.of(
       context,
     ).push<String>(MaterialPageRoute(builder: (_) => const ScanImportPage()));
-    if (importId == null || importId.isEmpty) return;
-    await _importAndOpen(importId);
+    if (qrText == null || qrText.isEmpty) return;
+
+    // 3) QR文字列を解析（impi:{uid}[:{nonce}]）
+    final key = _parseImportQr(qrText);
+    if (key == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('QRの形式が正しくありません')));
+      return;
+    }
+
+    // 4) 取り込み
+    await _importAndOpen(key);
+  }
+
+  // 追加: impi:{uid}[:{nonce}] の形式に対応する簡易パーサ
+  ImportKey? _parseImportQr(String qrText) {
+    // 許容: "impi:uid", "impi:uid:nonce"
+    if (!qrText.startsWith('impi:')) return null;
+    final parts = qrText.split(':'); // ["impi", "uid", "nonce?"]
+    if (parts.length < 2) return null;
+    final uid = parts[1].trim();
+    if (uid.isEmpty) return null;
+    final nonce = parts.length >= 3 ? parts[2].trim() : null;
+    return ImportKey(uid, (nonce?.isEmpty ?? true) ? null : nonce);
   }
 }

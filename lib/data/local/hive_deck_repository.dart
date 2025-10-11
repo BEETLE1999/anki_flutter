@@ -48,13 +48,13 @@ class HiveDeckRepository implements DeckRepository {
     // 2) デッキ upsert（キー＝deck.id）
     await deckBox.put(deck.id, deck.toEntity());
 
-    // 3) カード一括 put（キー＝card.id）
+    // 3) カード一括 put（キー＝"<deckId>:<cardId>" に変更）
     if (cards.isNotEmpty) {
-      final batch = <dynamic, FlashcardEntity>{};
+      final batch = <String, FlashcardEntity>{};
       for (final c in cards) {
-        // モデル側に deckId がある前提（提示定義どおり）
-        final ent = c.toEntity(); // ent.deckId は mapper 側で c.deckId を反映
-        batch[c.id] = ent;
+        final ent = c.toEntity(); // ent.deckId は c.deckId を反映
+        final localKey = '${c.deckId}:${c.id}'; // ← 衝突しない複合キー
+        batch[localKey] = ent;
       }
       await cardBox.putAll(batch);
     }

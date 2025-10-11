@@ -3,7 +3,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart' show WidgetsBindingObserver, AppLifecycleState;
+import 'package:flutter/widgets.dart'
+    show WidgetsBindingObserver, AppLifecycleState;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 class ScanImportPage extends StatefulWidget {
@@ -56,7 +57,8 @@ class _ScanImportPageState extends State<ScanImportPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
       _controller.stop();
     }
   }
@@ -71,74 +73,103 @@ class _ScanImportPageState extends State<ScanImportPage>
     if (mounted) Navigator.of(context).pop(result);
   }
 
-  String? _extractImportId(String raw) {
-    final text = raw.trim().replaceAll(RegExp(r'[\u200B-\u200D\uFEFF]'), '');
+  /// QRから "impi:{uid}" または "impi:{uid}:{nonce}" を返す（正規化）
+  String? _extractImportQr(String raw) {
+    // 0幅文字などを除去して正規化
+    String text = raw.trim().replaceAll(RegExp(r'[\u200B-\u200D\uFEFF]'), '');
 
-    final mImpc = RegExp(r'^impc:(?://)?([A-Za-z0-9_-]{4,64})$').firstMatch(text);
-    if (mImpc != null) return mImpc.group(1);
+    // impi:// → impi:
+    if (text.startsWith('impi://')) {
+      text = text.replaceFirst('impi://', 'impi:');
+    }
 
-    final plain = RegExp(r'^[A-Za-z0-9_-]{4,64}$');
-    if (plain.hasMatch(text)) return text;
+    // 1) 期待の最終形: impi:{uid}[:{nonce}]
+    final reImpi = RegExp(
+      r'^impi:([A-Za-z0-9_-]{1,64})(?::([A-Za-z0-9_-]{1,64}))?$',
+    );
+    final mImpi = reImpi.firstMatch(text);
+    if (mImpi != null) {
+      final uid = mImpi.group(1)!;
+      final nonce = mImpi.group(2);
+      return nonce == null ? 'impi:$uid' : 'impi:$uid:$nonce';
+    }
 
+    // 2) プレーンUIDだけ入っている場合は impi:{uid} を合成
+    final reUid = RegExp(r'^[A-Za-z0-9_-]{4,64}$');
+    if (reUid.hasMatch(text)) {
+      return 'impi:$text';
+    }
+
+    // 3) URL内に id / deckId / import/{uid} がある場合 → impi:{uid} 合成
     final uri = Uri.tryParse(text);
-    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    if (uri != null &&
+        (uri.scheme == 'http' ||
+            uri.scheme == 'https' ||
+            uri.scheme.isNotEmpty)) {
+      // /import/{uid}
       final segs = uri.pathSegments;
       final idx = segs.indexOf('import');
-      if (idx >= 0 && idx + 1 < segs.length) {
-        final cand = segs[idx + 1];
-        if (plain.hasMatch(cand)) return cand;
+      if (idx >= 0 && idx + 1 < segs.length && reUid.hasMatch(segs[idx + 1])) {
+        return 'impi:${segs[idx + 1]}';
       }
+      // ?id=xxx or ?deckId=xxx
       final qp = uri.queryParameters['id'] ?? uri.queryParameters['deckId'];
-      if (qp != null && plain.hasMatch(qp)) return qp;
+      if (qp != null && reUid.hasMatch(qp)) {
+        return 'impi:$qp';
+      }
     }
-    if (uri != null && uri.scheme.isNotEmpty) {
-      final qp = uri.queryParameters['id'] ?? uri.queryParameters['deckId'];
-      if (qp != null && plain.hasMatch(qp)) return qp;
-    }
-    final mJson = RegExp(r'"id"\s*:\s*"([A-Za-z0-9_-]{4,64})"').firstMatch(text);
-    if (mJson != null) return mJson.group(1);
 
-    return null;
+    // 4) JSON埋め込み {"id":"xxxx"}
+    final mJson = RegExp(
+      r'"id"\s*:\s*"([A-Za-z0-9_-]{4,64})"',
+    ).firstMatch(text);
+    if (mJson != null) {
+      return 'impi:${mJson.group(1)!}';
+    }
+
+    return null; // どれにも該当しない
   }
 
   void _onDetect(BarcodeCapture capture) async {
     if (_handled || _closing) return;
     if (capture.barcodes.isEmpty) return;
 
-    String? importId;
+    String? qrText;
     for (final b in capture.barcodes) {
       final raw = b.rawValue ?? '';
-      final id = _extractImportId(raw);
-      if (id != null) {
-        importId = id;
+      final t = _extractImportQr(raw);
+      if (t != null) {
+        qrText = t;
         break;
       }
     }
 
-    if (importId == null) {
+    if (qrText == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('このQRからImport IDを読み取れませんでした')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('このQRから取り込み情報を読み取れませんでした')));
       HapticFeedback.mediumImpact();
       return;
     }
 
     _handled = true;
+    debugPrint('[QR] scanned="$qrText"'); // 例: impi:<uid>[:<nonce>]
     HapticFeedback.selectionClick();
-    await _safePop(importId);
+    await _safePop(qrText); // ← ★ QR文字列そのものを返す
   }
 
   @override
   Widget build(BuildContext context) {
     final safeTop = MediaQuery.of(context).padding.top;
 
-    return PopScope(          // ★ WillPopScope → PopScope
-      canPop: false,          // 既定のpopをブロック（predictive back対応）
+    return PopScope(
+      // ★ WillPopScope → PopScope
+      canPop: false, // 既定のpopをブロック（predictive back対応）
       onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;   // すでにpopされた場合は何もしない
-        await _safePop();     // 明示停止してから戻る
+        if (didPop) return; // すでにpopされた場合は何もしない
+        await _safePop(); // 明示停止してから戻る
       },
       child: Scaffold(
         backgroundColor: Colors.black,

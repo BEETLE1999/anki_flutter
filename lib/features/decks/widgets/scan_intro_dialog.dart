@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_constants.dart';
 
@@ -15,13 +14,6 @@ class ScanIntroDialog extends StatelessWidget {
     );
   }
 
-  Future<void> _openImportSite() async {
-    final uri = Uri.parse(AppConstants.importSiteUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -29,14 +21,24 @@ class ScanIntroDialog extends StatelessWidget {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
-          Text('これからカメラを起動して、QRコードによる単語帳インポートを開始します。'),
+        children: [
+          Text('カメラを起動して、QRコードによる単語帳インポートを開始します。'),
           SizedBox(height: 12),
           Text(
-            '手順：\n'
-            '1. パソコンなどでWebサイト「大人の単語帳　インポートツール」を開く\n'
-            '2. 単語データを作成してQRコードを発行\n'
+            '【手順】\n'
+            '1. PCでウェブサイト「大人の単語帳　インポートツール」を開く\n'
+            '2. 単語帳データを作成してQRコードを発行\n'
             '3. この画面で「カメラ起動」を押してQRを読み取る',
+          ),
+          SizedBox(height: 32),
+          Center(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text('単語帳インポートツール（ウェブサイト）'),
+                Text(AppConstants.importSiteUrl),
+              ],
+            ),
           ),
         ],
       ),
@@ -44,12 +46,6 @@ class ScanIntroDialog extends StatelessWidget {
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
           child: const Text('キャンセル'),
-        ),
-        TextButton(
-          onPressed: () async {
-            await _openImportSite();
-          },
-          child: const Text('インポート用サイトを開く'),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(true),

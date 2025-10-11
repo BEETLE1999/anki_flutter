@@ -40,7 +40,6 @@ dependencies:
   hive: ^2.2.3
   material_symbols_icons: ^4.2873.0
   mobile_scanner: ^7.1.2
-  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

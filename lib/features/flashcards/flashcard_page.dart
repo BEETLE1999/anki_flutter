@@ -187,15 +187,19 @@ class _FlashcardPageState extends State<FlashcardPage> {
                 // Scroll 通知から “現在インデックス” を推定して同期
                 child: NotificationListener<ScrollEndNotification>(
                   onNotification: (n) {
-                    final metrics = n.metrics;
-                    // itemExtent ベースで最寄りのインデックスに丸める
-                    final estimated = (metrics.pixels / itemExtent)
-                        .round()
-                        .clamp(0, total - 1);
-                    if (estimated != index) {
-                      setState(() => index = estimated);
+                    // 横スクロールの最上位（depth 0）の通知だけ扱う
+                    final isFromCarousel =
+                        n.metrics.axis == Axis.horizontal && n.depth == 0;
+
+                    if (isFromCarousel && n is ScrollEndNotification) {
+                      final estimated = (n.metrics.pixels / itemExtent)
+                          .round()
+                          .clamp(0, total - 1);
+                      if (estimated != index) {
+                        setState(() => index = estimated);
+                      }
                     }
-                    return false;
+                    return false; // 伝播は止めない
                   },
                   child: CarouselView(
                     controller: _carouselController,
@@ -272,8 +276,8 @@ class _FlashcardPageState extends State<FlashcardPage> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Slider(
-                          min: 0.6,
-                          max: 1.4,
+                          min: 0.5,
+                          max: 1.3,
                           divisions: 8, // 0.1刻み
                           value: _textScale,
                           label: _textScale.toStringAsFixed(1),
