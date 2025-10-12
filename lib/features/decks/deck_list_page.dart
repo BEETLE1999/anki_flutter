@@ -312,6 +312,10 @@ class _DeckListPageState extends State<DeckListPage> {
 
   /// スキャン → import
   Future<void> _scanAndImport(BuildContext context) async {
+    // TODO ローカル仮データインポート用
+    // await _importAndOpen(ImportKey("dev-uid-1234", "82HDP5PV"));
+    // return;
+
     // 1) 説明ダイアログ
     final proceed = await ScanIntroDialog.show(context);
     if (proceed != true) return;

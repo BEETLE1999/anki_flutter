@@ -37,6 +37,9 @@ class _FlashcardPageState extends State<FlashcardPage> {
   static const _kTextScaleKey = 'flashcard.textScale';
   SharedPreferences? _prefs;
 
+  // デッキ別の再開ポイント保存キー
+  String get _resumeKey => 'flashcard.resume.${widget.deck.id}';
+
   @override
   void initState() {
     super.initState();
@@ -51,6 +54,10 @@ class _FlashcardPageState extends State<FlashcardPage> {
     setState(() {
       _prefs = p;
       if (saved != null) _textScale = saved.clamp(0.5, 1.3);
+    });
+    // 初回フレーム後に“続きから”を提示
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeOfferResume();
     });
   }
 
@@ -84,6 +91,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
       final nextIdx = (_safeIndex - 1).clamp(0, total - 1);
       setState(() => index = nextIdx);
       _carouselController.animateToItem(nextIdx);
+      _saveResumePoint();
     }
   }
 
@@ -93,6 +101,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
       final nextIdx = (_safeIndex + 1).clamp(0, total - 1);
       setState(() => index = nextIdx);
       _carouselController.animateToItem(nextIdx);
+      _saveResumePoint();
     }
   }
 
@@ -111,6 +120,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
       cardId: card.id,
       isBookmarked: newVal,
     );
+    _saveResumePoint();
   }
 
   Future<void> _toggleKnown(Flashcard card) async {
@@ -128,6 +138,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
       cardId: card.id,
       isKnown: newVal,
     );
+    _saveResumePoint();
   }
 
   @override
@@ -211,6 +222,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
                           .clamp(0, total - 1);
                       if (estimated != index) {
                         setState(() => index = estimated);
+                        _saveResumePoint();
                       }
                     }
                     return false; // 伝播は止めない
@@ -248,6 +260,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
                 final to = i.clamp(0, total - 1);
                 setState(() => index = to);
                 _carouselController.animateToItem(to);
+                _saveResumePoint();
               },
             ),
           ],
@@ -261,6 +274,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
             index = 0; // タブ切替時は先頭に戻す
             _carouselController = CarouselController(initialItem: 0);
           });
+          _saveResumePoint();
         },
       ),
     );
@@ -315,6 +329,71 @@ class _FlashcardPageState extends State<FlashcardPage> {
           },
         );
       },
+    );
+  }
+
+  // 現在位置を永続化（cardId 優先、index も保険で保存）
+  Future<void> _saveResumePoint() async {
+    if (_prefs == null) return;
+    final cards = _filteredCards;
+    if (cards.isEmpty) return;
+    final current = cards[_safeIndex];
+    final payload = jsonEncode({
+      'cardId': current.id,
+      'index': _safeIndex,
+      'ts': DateTime.now().millisecondsSinceEpoch,
+    });
+    await _prefs!.setString(_resumeKey, payload);
+  }
+
+  // 保存済みの cardId / index を読む（同期関数）
+  ({String? cardId, int? index}) _loadResumePointSync() {
+    final raw = _prefs?.getString(_resumeKey);
+    if (raw == null) return (cardId: null, index: null);
+    try {
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      return (
+        cardId: map['cardId'] as String?,
+        index: (map['index'] as num?)?.toInt(),
+      );
+    } catch (_) {
+      return (cardId: null, index: null);
+    }
+  }
+
+  // SnackBarで“続きから”を提示し、押されたらジャンプ
+  Future<void> _maybeOfferResume() async {
+    final saved = _loadResumePointSync();
+    if (saved.cardId == null && saved.index == null) return;
+
+    int? target;
+    final cards = _filteredCards;
+    if (cards.isEmpty) return;
+
+    if (saved.cardId != null) {
+      final i = cards.indexWhere((c) => c.id == saved.cardId);
+      if (i >= 0) target = i;
+    }
+    target ??= (saved.index != null)
+        ? saved.index!.clamp(0, cards.length - 1)
+        : null;
+
+    if (target == null) return;
+    // すでに同じ位置ならSnackBarを提示しない
+    if (target == _safeIndex) return;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('前回の続きから再開しますか？'),
+        action: SnackBarAction(
+          label: '続きから',
+          onPressed: () {
+            setState(() => index = target!);
+            _carouselController.animateToItem(target!);
+          },
+        ),
+        duration: const Duration(seconds: 6),
+      ),
     );
   }
 }
