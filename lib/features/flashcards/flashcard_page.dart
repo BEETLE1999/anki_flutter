@@ -1,6 +1,7 @@
 // lib/features/flashcards/flashcard_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_enum.dart';
 import '../../core/theme/app_colors.dart';
@@ -33,12 +34,24 @@ class _FlashcardPageState extends State<FlashcardPage> {
   late List<Flashcard> _cards;
   CardFilter filter = CardFilter.all;
   late CarouselController _carouselController;
+  static const _kTextScaleKey = 'flashcard.textScale';
+  SharedPreferences? _prefs;
 
   @override
   void initState() {
     super.initState();
     _cards = List.of(widget.cards);
     _carouselController = CarouselController(initialItem: index);
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final p = await SharedPreferences.getInstance();
+    final saved = p.getDouble(_kTextScaleKey);
+    setState(() {
+      _prefs = p;
+      if (saved != null) _textScale = saved.clamp(0.5, 1.3);
+    });
   }
 
   @override
@@ -132,9 +145,9 @@ class _FlashcardPageState extends State<FlashcardPage> {
           centerTitle: true,
           actions: [
             IconButton(
-              tooltip: '設定',
+              tooltip: '文字サイズ',
               onPressed: _openSettings,
-              icon: const Icon(Icons.settings),
+              icon: const Icon(Icons.format_size),
             ),
           ],
           bottom: const PreferredSize(
@@ -166,9 +179,9 @@ class _FlashcardPageState extends State<FlashcardPage> {
         centerTitle: true,
         actions: [
           IconButton(
-            tooltip: '設定',
+            tooltip: '文字サイズ',
             onPressed: _openSettings,
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.format_size),
           ),
         ],
         bottom: const PreferredSize(
@@ -286,6 +299,10 @@ class _FlashcardPageState extends State<FlashcardPage> {
                             setInner(() => _textScale = v);
                             // ページ全体にも反映
                             setState(() {});
+                          },
+                          onChangeEnd: (v) async {
+                            // 永続化（デバウンス目的でここで保存）
+                            await _prefs?.setDouble(_kTextScaleKey, v);
                           },
                         ),
                       ),
