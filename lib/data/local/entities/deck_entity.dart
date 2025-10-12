@@ -1,4 +1,5 @@
 // lib/data/local/entities/deck_entity.dart
+
 import 'package:hive/hive.dart';
 
 part 'deck_entity.g.dart';
@@ -23,6 +24,12 @@ class DeckEntity extends HiveObject {
   @HiveField(5)
   int? sortIndex;
 
+  @HiveField(6)
+  int knownCount;
+
+  @HiveField(7)
+  int bookmarkCount;
+
   DeckEntity({
     required this.id,
     required this.title,
@@ -30,5 +37,7 @@ class DeckEntity extends HiveObject {
     required this.description,
     required this.updatedAt,
     this.sortIndex,
+    this.knownCount = 0,
+    this.bookmarkCount = 0,
   });
 }

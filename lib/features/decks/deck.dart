@@ -6,6 +6,8 @@ class Deck {
   final int cardCount;
   final DateTime updatedAt;
   final int? sortIndex;
+  final int knownCount;
+  final int bookmarkCount;
 
   const Deck({
     required this.id,
@@ -14,7 +16,12 @@ class Deck {
     required this.cardCount,
     required this.updatedAt,
     this.sortIndex,
+    this.knownCount = 0,
+    this.bookmarkCount = 0,
   });
+
+  double get progressRate =>
+      cardCount == 0 ? 0 : (knownCount / cardCount * 100);
 
   Deck copyWith({
     String? id,
@@ -23,6 +30,8 @@ class Deck {
     int? cardCount,
     DateTime? updatedAt,
     int? sortIndex,
+    int? knownCount,
+    int? bookmarkCount,
   }) {
     return Deck(
       id: id ?? this.id,
@@ -31,6 +40,8 @@ class Deck {
       cardCount: cardCount ?? this.cardCount,
       updatedAt: updatedAt ?? this.updatedAt,
       sortIndex: sortIndex ?? this.sortIndex,
+      knownCount: knownCount ?? this.knownCount,
+      bookmarkCount: bookmarkCount ?? this.bookmarkCount,
     );
   }
 }

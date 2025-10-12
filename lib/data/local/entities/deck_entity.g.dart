@@ -23,13 +23,15 @@ class DeckEntityAdapter extends TypeAdapter<DeckEntity> {
       description: fields[3] as String,
       updatedAt: fields[4] as DateTime,
       sortIndex: fields[5] as int?,
+      knownCount: fields[6] as int,
+      bookmarkCount: fields[7] as int,
     );
   }
 
   @override
   void write(BinaryWriter writer, DeckEntity obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -41,7 +43,11 @@ class DeckEntityAdapter extends TypeAdapter<DeckEntity> {
       ..writeByte(4)
       ..write(obj.updatedAt)
       ..writeByte(5)
-      ..write(obj.sortIndex);
+      ..write(obj.sortIndex)
+      ..writeByte(6)
+      ..write(obj.knownCount)
+      ..writeByte(7)
+      ..write(obj.bookmarkCount);
   }
 
   @override

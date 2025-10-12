@@ -21,13 +21,15 @@ class FlashcardEntityAdapter extends TypeAdapter<FlashcardEntity> {
       deckId: fields[1] as String,
       front: fields[2] as String,
       back: fields[3] as String,
+      isKnown: fields[4] as bool,
+      isBookmarked: fields[5] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, FlashcardEntity obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -35,7 +37,11 @@ class FlashcardEntityAdapter extends TypeAdapter<FlashcardEntity> {
       ..writeByte(2)
       ..write(obj.front)
       ..writeByte(3)
-      ..write(obj.back);
+      ..write(obj.back)
+      ..writeByte(4)
+      ..write(obj.isKnown)
+      ..writeByte(5)
+      ..write(obj.isBookmarked);
   }
 
   @override

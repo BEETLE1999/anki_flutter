@@ -1,7 +1,5 @@
 // lib/features/decks/deck_list_page.dart
 
-import 'package:anki_flutter/features/decks/scan_import_page.dart';
-import 'package:anki_flutter/features/decks/widgets/scan_intro_dialog.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -14,6 +12,8 @@ import 'widgets/deck_tile.dart';
 import 'widgets/empty_view.dart';
 import 'widgets/error_view.dart';
 import 'widgets/list_loading.dart';
+import 'scan_import_page.dart';
+import 'widgets/scan_intro_dialog.dart';
 
 // 追加: QR結果を正規化するキー
 class ImportKey {
@@ -89,9 +89,11 @@ class _DeckListPageState extends State<DeckListPage> {
 
       // 3) ID差し替え
       final localDeck = remoteDeck.copyWith(id: localDeckId);
-      final localCards = remoteCards.map((c) => c.copyWith(deckId: localDeckId)).toList();
+      final localCards = remoteCards
+          .map((c) => c.copyWith(deckId: localDeckId))
+          .toList();
 
-      // 4) 保存
+      // 4) 保存（集計もsave内で反映）
       await _localRepo.saveDeckWithCards(localDeck, localCards);
 
       // インポート直後に先頭へ移動して永続化
@@ -109,10 +111,8 @@ class _DeckListPageState extends State<DeckListPage> {
       // 6) UI更新
       await _reload();
     } catch (e) {
-      // context を跨がずに messenger を使用
       messenger.showSnackBar(SnackBar(content: Text('取り込みに失敗: $e')));
     } finally {
-      // 事前にキャプチャした navigator で閉じる
       navigator.pop();
     }
   }
@@ -194,7 +194,6 @@ class _DeckListPageState extends State<DeckListPage> {
               return await showDialog<bool>(
                     context: context,
                     builder: (_) => AlertDialog(
-                      // clipBehavior: Clip.antiAlias, // ← 角丸に中身をキッチリ合わせる
                       title: const Text('削除しますか？'),
                       content: Text('「${deck.title}」のカードも含めて端末から削除します。'),
                       actions: [
@@ -247,7 +246,6 @@ class _DeckListPageState extends State<DeckListPage> {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // 先頭アイコンは削除
                       Expanded(
                         child: DeckTile(
                           deck: deck,
@@ -276,9 +274,16 @@ class _DeckListPageState extends State<DeckListPage> {
       final cards = await _fetchCardsFor(deck);
       if (!mounted) return;
       Navigator.of(context).pop();
-      await Navigator.of(
-        context,
-      ).push(slideFromRight(FlashcardPage(deck: deck, cards: cards)));
+      await Navigator.of(context).push(
+        slideFromRight(
+          FlashcardPage(
+            deck: deck,
+            cards: cards,
+            repo: _localRepo, // ← 追加
+          ),
+        ),
+      );
+      await _reload();
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context).pop();

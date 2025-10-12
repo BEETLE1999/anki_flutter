@@ -63,7 +63,7 @@ class DeckTile extends StatelessWidget {
                       Icon(Symbols.note_stack, size: 20),
                       Padding(
                         padding: const EdgeInsets.only(left: 2, right: 12),
-                        child: Text('30'),
+                        child: Text('${deck.cardCount}'),
                       ),
                       Icon(
                         Symbols.check_circle,
@@ -73,7 +73,7 @@ class DeckTile extends StatelessWidget {
                       ),
                       Padding(
                         padding: const EdgeInsets.only(left: 2, right: 8),
-                        child: Text('45%'),
+                        child: Text('${deck.progressRate.toStringAsFixed(0)}%'),
                       ),
                       Icon(
                         Symbols.bookmark,
@@ -81,7 +81,7 @@ class DeckTile extends StatelessWidget {
                         fill: IconFill.filled.value,
                         color: theme.colorScheme.primary,
                       ),
-                      Text('30'),
+                      Text('${deck.bookmarkCount}'),
                     ],
                   ),
                 ],

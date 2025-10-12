@@ -44,10 +44,7 @@ class HiveDeckRepository {
       await cardBox.deleteAll(keysToDelete);
     }
 
-    // 2) デッキ upsert（キー＝deck.id）
-    await deckBox.put(deck.id, deck.toEntity());
-
-    // 3) カード一括 put（キー＝"<deckId>:<cardId>"）
+    // 2) カード一括 put（キー＝"<deckId>:<cardId>"）
     if (cards.isNotEmpty) {
       final batch = <String, FlashcardEntity>{};
       for (final c in cards) {
@@ -57,6 +54,21 @@ class HiveDeckRepository {
       }
       await cardBox.putAll(batch);
     }
+
+    // 3) 集計して Deck に反映（一覧表示の高速化用）
+    final total = cards.length;
+    final known = cards.where((c) => c.isKnown).length; // ← 修正
+    final bookmarks = cards.where((c) => c.isBookmarked).length; // ← 修正
+
+    final updatedDeck = deck.copyWith(
+      cardCount: total,
+      knownCount: known,
+      bookmarkCount: bookmarks,
+      updatedAt: DateTime.now(), // 必要なら更新
+    );
+
+    // 4) デッキ upsert（キー＝deck.id）
+    await deckBox.put(updatedDeck.id, updatedDeck.toEntity());
   }
 
   // ---- Read -----------------------------------------------------------------
@@ -122,4 +134,46 @@ class HiveDeckRepository {
 
   /// 既存互換API：内部で deleteDeckAndCards を呼ぶ
   Future<void> deleteDeck(String deckId) => deleteDeckAndCards(deckId);
+
+  // ---- Update (flags + deck stats) -----------------------------------------
+  /// 単一カードの既知/ブクマフラグを更新し、Deck の集計値を差分更新
+  Future<void> updateCardFlagsAndDeckStats({
+    required String deckId,
+    required String cardId,
+    bool? isKnown,
+    bool? isBookmarked,
+  }) async {
+    final cardBox = await _openCardBox();
+    final deckBox = await _openDeckBox();
+
+    final key = '$deckId:$cardId';
+    final ent = cardBox.get(key);
+    if (ent == null) return;
+
+    final prevKnown = ent.isKnown;
+    final prevBm = ent.isBookmarked;
+
+    // 1) カード更新
+    if (isKnown != null) ent.isKnown = isKnown;
+    if (isBookmarked != null) ent.isBookmarked = isBookmarked;
+    await cardBox.put(key, ent);
+
+    // 2) デッキ差分集計
+    final deckEnt = deckBox.get(deckId);
+    if (deckEnt != null) {
+      var knownDelta = 0;
+      if (isKnown != null && isKnown != prevKnown) {
+        knownDelta = isKnown ? 1 : -1;
+      }
+      var bookmarkDelta = 0;
+      if (isBookmarked != null && isBookmarked != prevBm) {
+        bookmarkDelta = isBookmarked ? 1 : -1;
+      }
+      deckEnt
+        ..knownCount = deckEnt.knownCount + knownDelta
+        ..bookmarkCount = deckEnt.bookmarkCount + bookmarkDelta
+        ..updatedAt = DateTime.now();
+      await deckBox.put(deckId, deckEnt);
+    }
+  }
 }

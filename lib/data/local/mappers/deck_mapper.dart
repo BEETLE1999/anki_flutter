@@ -10,6 +10,8 @@ extension DeckEntityMapper on DeckEntity {
     description: description,
     updatedAt: updatedAt,
     sortIndex: sortIndex,
+    knownCount: knownCount,
+    bookmarkCount: bookmarkCount,
   );
 }
 
@@ -21,5 +23,7 @@ extension DeckModelMapper on Deck {
     description: description,
     updatedAt: updatedAt,
     sortIndex: sortIndex,
+    knownCount: knownCount,
+    bookmarkCount: bookmarkCount,
   );
 }

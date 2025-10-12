@@ -1,8 +1,10 @@
 // lib/features/flashcards/flashcard_page.dart
+
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_enum.dart';
 import '../../core/theme/app_colors.dart';
+import '../../data/local/hive_deck_repository.dart';
 import '../decks/deck.dart';
 import 'flashcard.dart';
 import 'widgets/flashcard_bottom_nav.dart';
@@ -10,10 +12,16 @@ import 'widgets/flashcard_surface.dart';
 import 'widgets/progress_bar_with_controls.dart';
 
 class FlashcardPage extends StatefulWidget {
-  const FlashcardPage({super.key, required this.deck, required this.cards});
+  const FlashcardPage({
+    super.key,
+    required this.deck,
+    required this.cards,
+    required this.repo,
+  });
 
   final Deck deck;
   final List<Flashcard> cards;
+  final HiveDeckRepository repo;
 
   @override
   State<FlashcardPage> createState() => _FlashcardPageState();
@@ -21,22 +29,15 @@ class FlashcardPage extends StatefulWidget {
 
 class _FlashcardPageState extends State<FlashcardPage> {
   int index = 0;
-  int known = 0;
-  int unknown = 0;
   double _textScale = 1.0;
-
-  // 既読・ブックマーク管理（card.id を想定）
-  final Set<String> readIds = {};
-  final Set<String> bookmarkIds = {};
-
+  late List<Flashcard> _cards;
   CardFilter filter = CardFilter.all;
-
-  // Carousel 用コントローラ（初期表示位置を index に合わせる）
   late CarouselController _carouselController;
 
   @override
   void initState() {
     super.initState();
+    _cards = List.of(widget.cards);
     _carouselController = CarouselController(initialItem: index);
   }
 
@@ -49,11 +50,11 @@ class _FlashcardPageState extends State<FlashcardPage> {
   List<Flashcard> get _filteredCards {
     switch (filter) {
       case CardFilter.unread:
-        return widget.cards.where((c) => !readIds.contains(c.id)).toList();
+        return _cards.where((c) => !c.isKnown).toList();
       case CardFilter.bookmarked:
-        return widget.cards.where((c) => bookmarkIds.contains(c.id)).toList();
+        return _cards.where((c) => c.isBookmarked).toList();
       case CardFilter.all:
-        return widget.cards;
+        return _cards;
     }
   }
 
@@ -82,28 +83,38 @@ class _FlashcardPageState extends State<FlashcardPage> {
     }
   }
 
-  void _toggleBookmark(String cardId) {
+  Future<void> _toggleBookmark(Flashcard card) async {
+    final i = _cards.indexWhere((x) => x.id == card.id);
+    if (i < 0) return;
+
+    final newVal = !card.isBookmarked;
     setState(() {
-      if (bookmarkIds.contains(cardId)) {
-        bookmarkIds.remove(cardId);
-      } else {
-        bookmarkIds.add(cardId);
-      }
-      // フィルタで外れた場合も index は _safeIndex が守ってくれる
-      index = _safeIndex;
+      _cards[i] = card.copyWith(isBookmarked: newVal);
+      index = _safeIndex; // フィルタで外れても安全
     });
+
+    await widget.repo.updateCardFlagsAndDeckStats(
+      deckId: widget.deck.id,
+      cardId: card.id,
+      isBookmarked: newVal,
+    );
   }
 
-  void _toggleCompleted(String cardId) {
+  Future<void> _toggleKnown(Flashcard card) async {
+    final i = _cards.indexWhere((x) => x.id == card.id);
+    if (i < 0) return;
+
+    final newVal = !card.isKnown;
     setState(() {
-      if (readIds.contains(cardId)) {
-        readIds.remove(cardId);
-      } else {
-        readIds.add(cardId);
-      }
-      // 既読トグルで未読フィルタから外れる可能性があるので安全化
+      _cards[i] = card.copyWith(isKnown: newVal);
       index = _safeIndex;
     });
+
+    await widget.repo.updateCardFlagsAndDeckStats(
+      deckId: widget.deck.id,
+      cardId: card.id,
+      isKnown: newVal,
+    );
   }
 
   @override
@@ -120,7 +131,6 @@ class _FlashcardPageState extends State<FlashcardPage> {
           title: Text(widget.deck.title, style: const TextStyle(fontSize: 24)),
           centerTitle: true,
           actions: [
-            // 空リスト時でも設定は開ける
             IconButton(
               tooltip: '設定',
               onPressed: _openSettings,
@@ -144,7 +154,6 @@ class _FlashcardPageState extends State<FlashcardPage> {
           onChanged: (f) => setState(() {
             filter = f;
             index = 0;
-            // 表示先頭へ
             _carouselController = CarouselController(initialItem: 0);
           }),
         ),
@@ -180,7 +189,6 @@ class _FlashcardPageState extends State<FlashcardPage> {
                 // Scroll 通知から “現在インデックス” を推定して同期
                 child: NotificationListener<ScrollEndNotification>(
                   onNotification: (n) {
-                    // 横スクロールの最上位（depth 0）の通知だけ扱う
                     final isFromCarousel =
                         n.metrics.axis == Axis.horizontal && n.depth == 0;
 
@@ -207,10 +215,10 @@ class _FlashcardPageState extends State<FlashcardPage> {
                           child: FlashcardSurface(
                             card: c,
                             textScale: _textScale,
-                            isBookmarked: bookmarkIds.contains(c.id),
-                            completed: readIds.contains(c.id),
-                            onBookmarkTap: () => _toggleBookmark(c.id),
-                            onCompletedTap: () => _toggleCompleted(c.id),
+                            isBookmarked: c.isBookmarked,
+                            completed: c.isKnown,
+                            onBookmarkTap: () => _toggleBookmark(c),
+                            onCompletedTap: () => _toggleKnown(c),
                           ),
                         ),
                     ],
@@ -238,7 +246,6 @@ class _FlashcardPageState extends State<FlashcardPage> {
           setState(() {
             filter = f;
             index = 0; // タブ切替時は先頭に戻す
-            // 先頭から表示（新しい initialItem で作り直すのが確実）
             _carouselController = CarouselController(initialItem: 0);
           });
         },
