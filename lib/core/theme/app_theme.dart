@@ -54,7 +54,9 @@ class AppTheme {
         );
       }),
     ),
-
+    dialogTheme: DialogThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -76,8 +78,6 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     ),
-    snackBarTheme: SnackBarThemeData(
-      backgroundColor: AppColors.sacredGreen,
-    ),
+    snackBarTheme: SnackBarThemeData(backgroundColor: AppColors.sacredGreen),
   );
 }

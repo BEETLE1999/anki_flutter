@@ -1,4 +1,5 @@
 // lib/data/local/hive_deck_repository.dart
+
 import 'package:hive/hive.dart';
 
 import '../../features/decks/deck.dart';
@@ -27,7 +28,7 @@ class HiveDeckRepository {
     return Hive.box<FlashcardEntity>(HiveBoxes.cards);
   }
 
-  // ---- API ------------------------------------------------------------------
+  // ---- Create/Upsert --------------------------------------------------------
   Future<void> saveDeckWithCards(Deck deck, List<Flashcard> cards) async {
     final deckBox = await _openDeckBox();
     final cardBox = await _openCardBox();
@@ -46,18 +47,34 @@ class HiveDeckRepository {
     // 2) デッキ upsert（キー＝deck.id）
     await deckBox.put(deck.id, deck.toEntity());
 
-    // 3) カード一括 put（キー＝"<deckId>:<cardId>" に変更）
+    // 3) カード一括 put（キー＝"<deckId>:<cardId>"）
     if (cards.isNotEmpty) {
       final batch = <String, FlashcardEntity>{};
       for (final c in cards) {
         final ent = c.toEntity(); // ent.deckId は c.deckId を反映
-        final localKey = '${c.deckId}:${c.id}'; // ← 衝突しない複合キー
+        final localKey = '${c.deckId}:${c.id}'; // 衝突しない複合キー
         batch[localKey] = ent;
       }
       await cardBox.putAll(batch);
     }
   }
 
+  // ---- Read -----------------------------------------------------------------
+  /// デッキ一覧（未設定は末尾に寄せ、同順位はタイトルで安定ソート）
+  Future<List<Deck>> fetchDecksOrdered() async {
+    final deckBox = await _openDeckBox();
+    final list = deckBox.values.map((e) => e.toModel()).toList();
+
+    list.sort((a, b) {
+      final ai = a.sortIndex ?? 1 << 30;
+      final bi = b.sortIndex ?? 1 << 30;
+      if (ai != bi) return ai.compareTo(bi);
+      return a.title.compareTo(b.title);
+    });
+    return list;
+  }
+
+  /// 既存互換：順序未考慮の生リスト
   Future<List<Deck>> fetchDecks() async {
     final deckBox = await _openDeckBox();
     return deckBox.values.map((e) => e.toModel()).toList();
@@ -71,14 +88,27 @@ class HiveDeckRepository {
         .toList();
   }
 
-  Future<void> deleteDeck(String deckId) async {
+  // ---- Update (order) -------------------------------------------------------
+  /// 並び順の保存：渡された順で 0..N の sortIndex を振り直して永続化
+  Future<void> updateDeckOrder(List<Deck> decksInOrder) async {
+    final deckBox = await _openDeckBox();
+    for (var i = 0; i < decksInOrder.length; i++) {
+      final d = decksInOrder[i];
+      final updated = d.copyWith(sortIndex: i); // Deck に sortIndex 前提
+      await deckBox.put(updated.id, updated.toEntity());
+    }
+  }
+
+  // ---- Delete ---------------------------------------------------------------
+  /// デッキ本体と関連カードを一括削除
+  Future<void> deleteDeckAndCards(String deckId) async {
     final deckBox = await _openDeckBox();
     final cardBox = await _openCardBox();
 
-    // 1) デッキ削除（キー＝deckIdで保持しているため、探索不要）
+    // デッキ削除
     await deckBox.delete(deckId);
 
-    // 2) 紐づくカード削除（keyに依存しない）
+    // 紐づくカード削除（valueの deckId で判定）
     final keysToDelete = cardBox
         .toMap()
         .entries
@@ -89,4 +119,7 @@ class HiveDeckRepository {
       await cardBox.deleteAll(keysToDelete);
     }
   }
+
+  /// 既存互換API：内部で deleteDeckAndCards を呼ぶ
+  Future<void> deleteDeck(String deckId) => deleteDeckAndCards(deckId);
 }

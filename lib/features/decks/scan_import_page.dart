@@ -1,10 +1,9 @@
 // lib/features/decks/scan_import_page.dart
 
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart'
-    show WidgetsBindingObserver, AppLifecycleState;
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 class ScanImportPage extends StatefulWidget {

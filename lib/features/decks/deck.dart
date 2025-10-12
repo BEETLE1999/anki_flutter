@@ -5,6 +5,7 @@ class Deck {
   final String description;
   final int cardCount;
   final DateTime updatedAt;
+  final int? sortIndex;
 
   const Deck({
     required this.id,
@@ -12,6 +13,7 @@ class Deck {
     required this.description,
     required this.cardCount,
     required this.updatedAt,
+    this.sortIndex,
   });
 
   Deck copyWith({
@@ -20,6 +22,7 @@ class Deck {
     String? description,
     int? cardCount,
     DateTime? updatedAt,
+    int? sortIndex,
   }) {
     return Deck(
       id: id ?? this.id,
@@ -27,6 +30,7 @@ class Deck {
       description: description ?? this.description,
       cardCount: cardCount ?? this.cardCount,
       updatedAt: updatedAt ?? this.updatedAt,
+      sortIndex: sortIndex ?? this.sortIndex,
     );
   }
 }

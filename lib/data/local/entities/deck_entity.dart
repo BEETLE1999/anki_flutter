@@ -20,11 +20,15 @@ class DeckEntity extends HiveObject {
   @HiveField(4)
   DateTime updatedAt;
 
+  @HiveField(5)
+  int? sortIndex;
+
   DeckEntity({
     required this.id,
     required this.title,
     required this.cardCount,
     required this.description,
     required this.updatedAt,
+    this.sortIndex,
   });
 }

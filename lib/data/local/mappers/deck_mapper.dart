@@ -9,6 +9,7 @@ extension DeckEntityMapper on DeckEntity {
     cardCount: cardCount,
     description: description,
     updatedAt: updatedAt,
+    sortIndex: sortIndex,
   );
 }
 
@@ -19,5 +20,6 @@ extension DeckModelMapper on Deck {
     cardCount: cardCount,
     description: description,
     updatedAt: updatedAt,
+    sortIndex: sortIndex,
   );
 }

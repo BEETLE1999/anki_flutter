@@ -53,7 +53,6 @@ class _FlashcardPageState extends State<FlashcardPage> {
       case CardFilter.bookmarked:
         return widget.cards.where((c) => bookmarkIds.contains(c.id)).toList();
       case CardFilter.all:
-      default:
         return widget.cards;
     }
   }
@@ -63,12 +62,6 @@ class _FlashcardPageState extends State<FlashcardPage> {
     final total = _filteredCards.length;
     if (total == 0) return 0;
     return index.clamp(0, total - 1);
-  }
-
-  Flashcard? get _currentOrNull {
-    final cards = _filteredCards;
-    if (cards.isEmpty) return null;
-    return cards[_safeIndex];
   }
 
   void _prev() {
@@ -191,7 +184,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
                     final isFromCarousel =
                         n.metrics.axis == Axis.horizontal && n.depth == 0;
 
-                    if (isFromCarousel && n is ScrollEndNotification) {
+                    if (isFromCarousel) {
                       final estimated = (n.metrics.pixels / itemExtent)
                           .round()
                           .clamp(0, total - 1);
