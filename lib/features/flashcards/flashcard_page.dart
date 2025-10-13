@@ -30,23 +30,38 @@ class FlashcardPage extends StatefulWidget {
 }
 
 class _FlashcardPageState extends State<FlashcardPage> {
+  // ---- 状態 ------------------------------------------------------------------
   int index = 0;
   double _textScale = 1.0;
   late List<Flashcard> _cards;
   CardFilter filter = CardFilter.all;
-  late CarouselController _carouselController;
+
   static const _kTextScaleKey = 'flashcard.textScale';
   SharedPreferences? _prefs;
 
-  // デッキ別の再開ポイント保存キー
+  // PageView 用
+  late PageController _pageController;
+  bool _isAnimating = false; // 二重アニメ防止
+
+  // デッキ別の再開ポイント保存キー（「すべて」フィルタ専用で使う）
   String get _resumeKey => 'flashcard.resume.${widget.deck.id}';
 
+  // 「すべて」のときのみ進捗保存する
+  bool get _isPersistentFilter => filter == CardFilter.all;
+
+  // ---- ライフサイクル --------------------------------------------------------
   @override
   void initState() {
     super.initState();
     _cards = List.of(widget.cards);
-    _carouselController = CarouselController(initialItem: index);
+    _pageController = PageController(initialPage: index);
     _loadPrefs();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPrefs() async {
@@ -56,18 +71,14 @@ class _FlashcardPageState extends State<FlashcardPage> {
       _prefs = p;
       if (saved != null) _textScale = saved.clamp(0.5, 1.3);
     });
-    // 初回フレーム後に“続きから”を提示
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _maybeOfferResume();
+    // 初回フレーム後に“続きから”を提示（「すべて」のときのみ、ボトムシート）
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _maybeOfferResumeViaSheet();
     });
   }
 
-  @override
-  void dispose() {
-    _carouselController.dispose();
-    super.dispose();
-  }
-
+  // ---- データ／フィルタ -------------------------------------------------------
   List<Flashcard> get _filteredCards {
     switch (filter) {
       case CardFilter.unread:
@@ -86,26 +97,60 @@ class _FlashcardPageState extends State<FlashcardPage> {
     return index.clamp(0, total - 1);
   }
 
-  void _prev() {
-    final total = _filteredCards.length;
-    if (_safeIndex > 0) {
-      final nextIdx = (_safeIndex - 1).clamp(0, total - 1);
-      setState(() => index = nextIdx);
-      _carouselController.animateToItem(nextIdx);
-      _saveResumePoint();
+  // ---- コントローラ同期ヘルパ -------------------------------------------------
+  void _syncControllerToIndex({bool animate = false}) {
+    final cards = _filteredCards;
+    if (cards.isEmpty) return;
+    final to = _safeIndex;
+    if (!_pageController.hasClients) return;
+
+    if (animate) {
+      if (_isAnimating) return;
+      _isAnimating = true;
+      _pageController
+          .animateToPage(
+            to,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() => _isAnimating = false);
+    } else {
+      _pageController.jumpToPage(to);
     }
+  }
+
+  // ---- ナビゲーション（アニメ含む） -------------------------------------------
+  Future<void> _goTo(int target) async {
+    final cards = _filteredCards;
+    if (cards.isEmpty) return;
+    final to = target.clamp(0, cards.length - 1);
+    if (_isAnimating || to == index) return;
+
+    _isAnimating = true;
+    try {
+      await _pageController.animateToPage(
+        to,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+      if (_isPersistentFilter) _saveResumePoint();
+    } finally {
+      _isAnimating = false;
+    }
+  }
+
+  void _prev() {
+    if (_safeIndex <= 0) return;
+    _goTo(_safeIndex - 1);
   }
 
   void _next() {
     final total = _filteredCards.length;
-    if (_safeIndex < total - 1) {
-      final nextIdx = (_safeIndex + 1).clamp(0, total - 1);
-      setState(() => index = nextIdx);
-      _carouselController.animateToItem(nextIdx);
-      _saveResumePoint();
-    }
+    if (_safeIndex >= total - 1) return;
+    _goTo(_safeIndex + 1);
   }
 
+  // ---- トグル操作 ------------------------------------------------------------
   Future<void> _toggleBookmark(Flashcard card) async {
     final i = _cards.indexWhere((x) => x.id == card.id);
     if (i < 0) return;
@@ -116,12 +161,17 @@ class _FlashcardPageState extends State<FlashcardPage> {
       index = _safeIndex; // フィルタで外れても安全
     });
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncControllerToIndex(animate: false);
+    });
+
     await widget.repo.updateCardFlagsAndDeckStats(
       deckId: widget.deck.id,
       cardId: card.id,
       isBookmarked: newVal,
     );
-    _saveResumePoint();
+
+    if (_isPersistentFilter) _saveResumePoint();
   }
 
   Future<void> _toggleKnown(Flashcard card) async {
@@ -134,22 +184,25 @@ class _FlashcardPageState extends State<FlashcardPage> {
       index = _safeIndex;
     });
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncControllerToIndex(animate: false);
+    });
+
     await widget.repo.updateCardFlagsAndDeckStats(
       deckId: widget.deck.id,
       cardId: card.id,
       isKnown: newVal,
     );
-    _saveResumePoint();
+
+    if (_isPersistentFilter) _saveResumePoint();
   }
 
+  // ---- ビルド -----------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final cards = _filteredCards;
     final total = cards.length;
-    final viewportWidth = MediaQuery.of(context).size.width;
-    final itemExtent = viewportWidth * 0.92;
 
-    // フィルタ後カードが 0 の時のプレースホルダ
     if (cards.isEmpty) {
       return Scaffold(
         appBar: AppBar(
@@ -176,14 +229,30 @@ class _FlashcardPageState extends State<FlashcardPage> {
         ),
         bottomNavigationBar: FlashcardBottomNav(
           filter: filter,
-          onChanged: (f) => setState(() {
-            filter = f;
-            index = 0;
-            _carouselController = CarouselController(initialItem: 0);
-          }),
+          onChanged: (f) async {
+            // 同じタブを再タップしたら何もしない
+            if (f == filter) return;
+            setState(() {
+              filter = f;
+              index = 0; // 切替時は常に1枚目へ
+            });
+            // 表示を0ページへ即時同期（PageViewは無いが統一のため）
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _syncControllerToIndex(animate: false);
+            });
+            // 「すべて」に入った直後に再開案内（ボトムシート）
+            if (_isPersistentFilter) {
+              await _maybeOfferResumeViaSheet();
+            }
+          },
         ),
       );
     }
+
+    final platform = Theme.of(context).platform;
+    final physics = platform == TargetPlatform.iOS
+        ? const BouncingScrollPhysics()
+        : const ClampingScrollPhysics();
 
     return Scaffold(
       appBar: AppBar(
@@ -207,81 +276,80 @@ class _FlashcardPageState extends State<FlashcardPage> {
         ),
         child: Column(
           children: [
-            // --- カルーセル本体 ---
+            // --- ページ本体 ---
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 32, 16, 0),
-                // Scroll 通知から “現在インデックス” を推定して同期
-                child: NotificationListener<ScrollEndNotification>(
-                  onNotification: (n) {
-                    final isFromCarousel =
-                        n.metrics.axis == Axis.horizontal && n.depth == 0;
-
-                    if (isFromCarousel) {
-                      final estimated = (n.metrics.pixels / itemExtent)
-                          .round()
-                          .clamp(0, total - 1);
-                      if (estimated != index) {
-                        setState(() => index = estimated);
-                        _saveResumePoint();
-                      }
+                child: PageView.builder(
+                  controller: _pageController,
+                  physics: physics,
+                  pageSnapping: true,
+                  onPageChanged: (i) {
+                    if (i != index) {
+                      setState(() => index = i);
+                      if (_isPersistentFilter) _saveResumePoint();
                     }
-                    return false; // 伝播は止めない
                   },
-                  child: CarouselView(
-                    controller: _carouselController,
-                    itemExtent: itemExtent,
-                    shrinkExtent: itemExtent,
-                    itemSnapping: true,
-                    padding: const EdgeInsets.symmetric(horizontal: 0),
-                    enableSplash: false,
-                    children: [
-                      for (final c in cards)
-                        Center(
+                  itemCount: total,
+                  itemBuilder: (context, i) {
+                    final visible = (i == index);
+                    return TickerMode(
+                      enabled: visible,
+                      child: RepaintBoundary(
+                        child: Center(
                           child: FlashcardSurface(
-                            card: c,
+                            card: cards[i],
                             textScale: _textScale,
-                            isBookmarked: c.isBookmarked,
-                            completed: c.isKnown,
-                            onBookmarkTap: () => _toggleBookmark(c),
-                            onCompletedTap: () => _toggleKnown(c),
+                            isBookmarked: cards[i].isBookmarked,
+                            completed: cards[i].isKnown,
+                            onBookmarkTap: () => _toggleBookmark(cards[i]),
+                            onCompletedTap: () => _toggleKnown(cards[i]),
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
+
+            // --- プログレス／コントロール ---
             ProgressBarWithControls(
               index: _safeIndex,
               total: total,
               onPrev: _prev,
               onNext: _next,
-              onChanged: (i) {
-                final to = i.clamp(0, total - 1);
-                setState(() => index = to);
-                _carouselController.animateToItem(to);
-                _saveResumePoint();
-              },
+              onChanged: (i) => _goTo(i),
             ),
           ],
         ),
       ),
+
+      // --- フィルタタブ ---
       bottomNavigationBar: FlashcardBottomNav(
         filter: filter,
-        onChanged: (f) {
+        onChanged: (f) async {
+          // 同じタブを再タップしたら何もしない
+          if (f == filter) return;
           setState(() {
             filter = f;
-            index = 0; // タブ切替時は先頭に戻す
-            _carouselController = CarouselController(initialItem: 0);
+            index = 0; // ★ 切替時は常に1枚目へ
           });
-          _saveResumePoint();
+          // 再ビルド後に表示を0ページへ即時同期
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _syncControllerToIndex(animate: false);
+          });
+
+          // 「すべて」に切り替えたときだけ、ボトムシートで続き案内
+          if (_isPersistentFilter) {
+            await _maybeOfferResumeViaSheet();
+          }
         },
       ),
     );
   }
 
-  // 設定ボトムシート
+  // ---- 設定ボトムシート ------------------------------------------------------
   Future<void> _openSettings() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -306,24 +374,21 @@ class _FlashcardPageState extends State<FlashcardPage> {
                         child: Slider(
                           min: 0.5,
                           max: 1.3,
-                          divisions: 8, // 0.1刻み
+                          divisions: 8,
                           value: _textScale,
                           label: _textScale.toStringAsFixed(1),
                           onChanged: (v) {
-                            // ボトムシート側の即時プレビュー
                             setInner(() => _textScale = v);
-                            // ページ全体にも反映
                             setState(() {});
                           },
                           onChangeEnd: (v) async {
-                            // 永続化（デバウンス目的でここで保存）
                             await _prefs?.setDouble(_kTextScaleKey, v);
                           },
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
                 ],
               ),
             );
@@ -333,9 +398,10 @@ class _FlashcardPageState extends State<FlashcardPage> {
     );
   }
 
-  // 現在位置を永続化（cardId 優先、index も保険で保存）
+  // ---- 再開ポイントの保存・読込（「すべて」限定） ------------------------------
   Future<void> _saveResumePoint() async {
     if (_prefs == null) return;
+    if (!_isPersistentFilter) return;
     final cards = _filteredCards;
     if (cards.isEmpty) return;
     final current = cards[_safeIndex];
@@ -347,7 +413,6 @@ class _FlashcardPageState extends State<FlashcardPage> {
     await _prefs!.setString(_resumeKey, payload);
   }
 
-  // 保存済みの cardId / index を読む（同期関数）
   ({String? cardId, int? index}) _loadResumePointSync() {
     final raw = _prefs?.getString(_resumeKey);
     if (raw == null) return (cardId: null, index: null);
@@ -362,39 +427,83 @@ class _FlashcardPageState extends State<FlashcardPage> {
     }
   }
 
-  // SnackBarで“続きから”を提示し、押されたらジャンプ
-  Future<void> _maybeOfferResume() async {
+  int? _computeResumeTargetIndex() {
     final saved = _loadResumePointSync();
-    if (saved.cardId == null && saved.index == null) return;
+    if (saved.cardId == null && saved.index == null) return null;
 
-    int? target;
     final cards = _filteredCards;
-    if (cards.isEmpty) return;
+    if (cards.isEmpty) return null;
 
+    // cardId を優先して復元
     if (saved.cardId != null) {
       final i = cards.indexWhere((c) => c.id == saved.cardId);
-      if (i >= 0) target = i;
+      if (i >= 0) return i;
     }
-    target ??= (saved.index != null)
-        ? saved.index!.clamp(0, cards.length - 1)
-        : null;
+    if (saved.index != null) {
+      return saved.index!.clamp(0, cards.length - 1);
+    }
+    return null;
+  }
 
-    if (target == null) return;
-    // すでに同じ位置ならSnackBarを提示しない
-    if (target == _safeIndex) return;
+  // 「続きから」案内（ボトムシート）
+  Future<void> _offerResumeSheet(int target) async {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('前回の続きから再開しますか？'),
-        action: SnackBarAction(
-          label: '続きから',
-          onPressed: () {
-            setState(() => index = target!);
-            _carouselController.animateToItem(target!);
-          },
-        ),
-        duration: const Duration(seconds: 6),
-      ),
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '前回の続きから再開しますか？',
+                // style: Theme.of(context).textTheme.titleLarge,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 8),
+              Text('前回位置： ${target + 1}/${_filteredCards.length}'),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(), // 1枚目のまま
+                      child: const Text('1枚目から'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _goTo(target);
+                      },
+                      child: const Text('続きから'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  // 初期表示／フィルタ切替直後に呼ぶ：ボトムシートで続き案内（「すべて」限定）
+  Future<void> _maybeOfferResumeViaSheet() async {
+    if (!_isPersistentFilter) return;
+    final target = _computeResumeTargetIndex();
+    if (target == null) return;
+    if (target == _safeIndex) return; // すでにその位置なら不要（初期が1枚目でない場合など）
+
+    // 一旦「常に1枚目へ」の仕様で index=0 にしているので、target != 0 のときのみ案内
+    if (target != 0) {
+      await _offerResumeSheet(target);
+    }
   }
 }
