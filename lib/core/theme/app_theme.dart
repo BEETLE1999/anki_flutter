@@ -54,6 +54,11 @@ class AppTheme {
         );
       }),
     ),
+    dividerTheme: DividerThemeData(
+      color: AppColors.border,
+      thickness: 0.8,
+      space: 24,
+    ),
     dialogTheme: DialogThemeData(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),

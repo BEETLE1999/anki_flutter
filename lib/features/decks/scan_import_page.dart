@@ -156,7 +156,7 @@ class _ScanImportPageState extends State<ScanImportPage>
     _handled = true;
     debugPrint('[QR] scanned="$qrText"'); // 例: impi:<uid>[:<nonce>]
     HapticFeedback.selectionClick();
-    await _safePop(qrText); // ← ★ QR文字列そのものを返す
+    await _safePop(qrText); // QR文字列そのものを返す
   }
 
   @override

@@ -5,15 +5,32 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/local/hive_deck_repository.dart';
 import '../../data/remote/remote_deck_repository.dart';
+import '../../shared/widgets/ad_banner.dart';
 import '../flashcards/flashcard.dart';
 import '../flashcards/flashcard_page.dart';
 import 'deck.dart';
+import 'scan_import_page.dart';
 import 'widgets/deck_tile.dart';
 import 'widgets/empty_view.dart';
 import 'widgets/error_view.dart';
 import 'widgets/list_loading.dart';
-import 'scan_import_page.dart';
 import 'widgets/scan_intro_dialog.dart';
+
+/// 設定メニューの項目
+enum SettingsAction {
+  import,
+  backup,
+  restore,
+  purchasePro,
+  manageSubscription,
+  signInOut,
+}
+
+/// 仮バナーの高さ
+const double _kAdBannerHeight = 60;
+
+/// 広告表示有無：Proならfalseに
+bool _adsEnabled = false;
 
 // 追加: QR結果を正規化するキー
 class ImportKey {
@@ -135,10 +152,17 @@ class _DeckListPageState extends State<DeckListPage> {
         centerTitle: true,
         title: const Text('単語帳一覧', style: TextStyle(fontSize: 28)),
         actions: [
-          IconButton(
-            tooltip: 'インポート',
-            onPressed: () => _scanAndImport(context),
-            icon: const Icon(Icons.download),
+          // IconButton(
+          //   tooltip: 'インポート',
+          //   onPressed: () => _scanAndImport(context),
+          //   icon: const Icon(Icons.download),
+          // ),
+          Builder(
+            builder: (ctx) => IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: () => Scaffold.of(ctx).openEndDrawer(),
+              tooltip: '設定とツール',
+            ),
           ),
         ],
         bottom: const PreferredSize(
@@ -146,8 +170,40 @@ class _DeckListPageState extends State<DeckListPage> {
           child: Divider(height: 1, thickness: 1, color: AppColors.border),
         ),
       ),
+      endDrawer: _SettingsDrawer(onSelected: (a) => _onSelect(context, a)),
+      bottomNavigationBar: _adsEnabled
+          ? AdBannerPlaceholder(
+              onTap: () => ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('（仮）広告がタップされました'))),
+            )
+          : null,
       body: _buildBody(),
     );
+  }
+
+  void _onSelect(BuildContext context, SettingsAction action) {
+    Navigator.of(context).pop(); // endDrawer を閉じる
+    switch (action) {
+      case SettingsAction.import:
+        _scanAndImport(context);
+        break;
+      case SettingsAction.backup:
+        // TODO: ローカル→クラウド バックアップ
+        break;
+      case SettingsAction.restore:
+        // TODO: 復元フロー
+        break;
+      case SettingsAction.purchasePro:
+        // TODO: 課金フロー（in_app_purchase / storekit / billing）
+        break;
+      case SettingsAction.manageSubscription:
+        // TODO: サブスク管理 or 購入の復元
+        break;
+      case SettingsAction.signInOut:
+        // TODO: Google サインイン or サインアウト
+        break;
+    }
   }
 
   Widget _buildBody() {
@@ -158,8 +214,11 @@ class _DeckListPageState extends State<DeckListPage> {
     return RefreshIndicator(
       onRefresh: _reload,
       child: ReorderableListView.builder(
-        padding: const EdgeInsets.only(bottom: 24),
-        buildDefaultDragHandles: false, // 自前ハンドル
+        padding: EdgeInsets.only(
+          bottom: 24 + (_adsEnabled ? _kAdBannerHeight : 0),
+        ),
+        buildDefaultDragHandles: false,
+        // 自前ハンドル
         itemCount: _decks.length,
         onReorder: (oldIndex, newIndex) async {
           setState(() {
@@ -195,7 +254,7 @@ class _DeckListPageState extends State<DeckListPage> {
                     context: context,
                     builder: (_) => AlertDialog(
                       title: const Text('削除しますか？'),
-                      content: Text('「${deck.title}」のカードも含めて端末から削除します。'),
+                      content: Text('「${deck.title}」を端末から削除します。'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context, false),
@@ -349,5 +408,82 @@ class _DeckListPageState extends State<DeckListPage> {
     if (uid.isEmpty) return null;
     final nonce = parts.length >= 3 ? parts[2].trim() : null;
     return ImportKey(uid, (nonce?.isEmpty ?? true) ? null : nonce);
+  }
+}
+
+class _SettingsDrawer extends StatelessWidget {
+  const _SettingsDrawer({required this.onSelected});
+
+  final void Function(SettingsAction) onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    // TODO ここは実際は状態から取得：isPro, remainingImports など
+    final bool isPro = true;
+    final int remainingImports = 8; // 例：今月残り
+
+    return Drawer(
+      child: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          children: [
+            // ヘッダー（プラン状態）
+            ListTile(
+              leading: Icon(isPro ? Icons.workspace_premium : Icons.lock),
+              title: Text(isPro ? 'Proプラン' : '無料プラン'),
+              subtitle: Text(
+                isPro ? '有効期限\n2026年10月22日' : '今月のインポート残り：$remainingImports 回',
+              ),
+            ),
+            const Divider(),
+            // 操作メニュー
+            ListTile(
+              leading: const Icon(Icons.download),
+              title: const Text('インポート'),
+              subtitle: const Text('QR/カメラで単語帳をインポート'),
+              onTap: () => onSelected(SettingsAction.import),
+            ),
+            if (isPro) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.cloud_upload),
+                title: const Text('バックアップ'),
+                subtitle: const Text('端末の全データをクラウドに保存'),
+                onTap: () => onSelected(SettingsAction.backup),
+              ),
+              ListTile(
+                leading: const Icon(Icons.cloud_download),
+                title: const Text('復元'),
+                subtitle: const Text('クラウドから端末へ復元'),
+                onTap: () => onSelected(SettingsAction.restore),
+              ),
+            ],
+            if (!isPro) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.shopping_bag),
+                title: const Text('Proプランを購入'),
+                subtitle: const Text('インポート上限解除＆バックアップ機能＆広告非表示'),
+                onTap: () => onSelected(SettingsAction.purchasePro),
+              ),
+              ListTile(
+                leading: const Icon(Icons.manage_accounts),
+                title: const Text('サブスクリプション管理 / 購入を復元'),
+                onTap: () => onSelected(SettingsAction.manageSubscription),
+              ),
+            ],
+            if (isPro) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.login),
+                title: Text(isPro ? 'ログアウト' : 'ログイン'),
+                onTap: () => onSelected(SettingsAction.signInOut),
+              ),
+            ],
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 }

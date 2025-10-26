@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_enum.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/local/hive_deck_repository.dart';
+import '../../shared/widgets/ad_banner.dart';
 import '../decks/deck.dart';
 import 'flashcard.dart';
 import 'widgets/flashcard_bottom_nav.dart';
@@ -48,6 +49,9 @@ class _FlashcardPageState extends State<FlashcardPage> {
 
   // 「すべて」のときのみ進捗保存する
   bool get _isPersistentFilter => filter == CardFilter.all;
+
+  /// 広告表示有無：Proならfalseに
+  bool _adsEnabled = false;
 
   // ---- ライフサイクル --------------------------------------------------------
   @override
@@ -227,25 +231,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
             _ => 'カードがありません',
           }),
         ),
-        bottomNavigationBar: FlashcardBottomNav(
-          filter: filter,
-          onChanged: (f) async {
-            // 同じタブを再タップしたら何もしない
-            if (f == filter) return;
-            setState(() {
-              filter = f;
-              index = 0; // 切替時は常に1枚目へ
-            });
-            // 表示を0ページへ即時同期（PageViewは無いが統一のため）
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _syncControllerToIndex(animate: false);
-            });
-            // 「すべて」に入った直後に再開案内（ボトムシート）
-            if (_isPersistentFilter) {
-              await _maybeOfferResumeViaSheet();
-            }
-          },
-        ),
+        bottomNavigationBar: _bottomNavBar(),
       );
     }
 
@@ -324,28 +310,7 @@ class _FlashcardPageState extends State<FlashcardPage> {
           ],
         ),
       ),
-
-      // --- フィルタタブ ---
-      bottomNavigationBar: FlashcardBottomNav(
-        filter: filter,
-        onChanged: (f) async {
-          // 同じタブを再タップしたら何もしない
-          if (f == filter) return;
-          setState(() {
-            filter = f;
-            index = 0; // ★ 切替時は常に1枚目へ
-          });
-          // 再ビルド後に表示を0ページへ即時同期
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _syncControllerToIndex(animate: false);
-          });
-
-          // 「すべて」に切り替えたときだけ、ボトムシートで続き案内
-          if (_isPersistentFilter) {
-            await _maybeOfferResumeViaSheet();
-          }
-        },
-      ),
+      bottomNavigationBar: _bottomNavBar(),
     );
   }
 
@@ -505,5 +470,46 @@ class _FlashcardPageState extends State<FlashcardPage> {
     if (target != 0) {
       await _offerResumeSheet(target);
     }
+  }
+
+  Widget _bottomNavBar() {
+    return SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 広告（仮）
+          if (_adsEnabled) ...[
+            AdBannerPlaceholder(
+              showTopBorder: false,
+              onTap: () => ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('（仮）広告がタップされました'))),
+              onClose: () => setState(() => _adsEnabled = false),
+            ),
+            const Divider(height: 1, thickness: 1, color: AppColors.border),
+          ],
+          // 既存のボトムタブ
+          FlashcardBottomNav(
+            filter: filter,
+            onChanged: (f) async {
+              if (f == filter) return;
+              setState(() {
+                filter = f;
+                index = 0; // 切替時は1枚目へ
+              });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _syncControllerToIndex(animate: false);
+              });
+              if (_isPersistentFilter) {
+                await _maybeOfferResumeViaSheet();
+              }
+            },
+          ),
+
+
+        ],
+      ),
+    );
   }
 }
