@@ -12,7 +12,20 @@
           "package_name": "com.example.anki_flutter"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "640858425141-vqailj2t47rvem8mkgh8gg277ft6ts9n.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.anki_flutter",
+            "certificate_hash": "6bc4f9d0ace7efdc78ac9422bcc3000eb5cd95b5"
+          }
+        },
+        {
+          "client_id": "640858425141-lh8pqdrs3ore7sgu0r90l6kq4hg7pduf.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBMlxMWDHYsydtO0JWxQzI3LAWrfrW9yDA"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "640858425141-lh8pqdrs3ore7sgu0r90l6kq4hg7pduf.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "640858425141-3btkjabc1u2g95mhm9kc1ubpu3h7kr96.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.ankiFlutter"
+              }
+            }
+          ]
         }
       }
     }

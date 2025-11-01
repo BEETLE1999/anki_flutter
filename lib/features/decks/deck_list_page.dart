@@ -1,8 +1,11 @@
 // lib/features/decks/deck_list_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
+import '../../core/auth/auth_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/purchase/purchase_service.dart';
 import '../../data/local/hive_deck_repository.dart';
 import '../../data/remote/remote_deck_repository.dart';
 import '../../shared/widgets/ad_banner.dart';
@@ -50,6 +53,13 @@ class _DeckListPageState extends State<DeckListPage> {
   final _localRepo = HiveDeckRepository();
   final _remoteRepo = DeckRepository();
 
+  final _auth = AuthService();
+  User? _user;
+  late final Stream<User?> _authStream;
+
+  // 課金
+  late final PurchaseService _purchase;
+
   bool _loading = true;
   String? _error;
   List<Deck> _decks = [];
@@ -57,7 +67,34 @@ class _DeckListPageState extends State<DeckListPage> {
   @override
   void initState() {
     super.initState();
+
+    // 課金サービスの監視（init自体はmain()で実行済み想定）
+    _purchase = PurchaseService.instance;
+    _purchase.addListener(_onPurchaseChanged);
+
+    // v7 AuthService 側で initialize 済みにしてあるのでここは監視だけでOK
+    _authStream = _auth.authStateChanges;
+    _authStream.listen((u) {
+      if (!mounted) return;
+      setState(() => _user = u);
+    });
+    // 任意：未ログインなら匿名で入れておくとUXがよい
+    _auth.signInAnonymouslyIfNeeded();
+
     _load();
+  }
+
+  @override
+  void dispose() {
+    _purchase.removeListener(_onPurchaseChanged);
+    super.dispose();
+  }
+
+  void _onPurchaseChanged() {
+    if (!mounted) return;
+    setState(() {
+      // UI再描画だけでOK（isProは_build内で参照）
+    });
   }
 
   Future<void> _load() async {
@@ -147,16 +184,14 @@ class _DeckListPageState extends State<DeckListPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isPro = _purchase.isPro;
+    _adsEnabled = !isPro;
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
         title: const Text('単語帳一覧', style: TextStyle(fontSize: 28)),
         actions: [
-          // IconButton(
-          //   tooltip: 'インポート',
-          //   onPressed: () => _scanAndImport(context),
-          //   icon: const Icon(Icons.download),
-          // ),
           Builder(
             builder: (ctx) => IconButton(
               icon: const Icon(Icons.settings),
@@ -170,7 +205,11 @@ class _DeckListPageState extends State<DeckListPage> {
           child: Divider(height: 1, thickness: 1, color: AppColors.border),
         ),
       ),
-      endDrawer: _SettingsDrawer(onSelected: (a) => _onSelect(context, a)),
+      endDrawer: _SettingsDrawer(
+        user: _user,
+        isPro: isPro,
+        onSelected: (a) => _onSelect(context, a),
+      ),
       bottomNavigationBar: _adsEnabled
           ? AdBannerPlaceholder(
               onTap: () => ScaffoldMessenger.of(
@@ -182,33 +221,91 @@ class _DeckListPageState extends State<DeckListPage> {
     );
   }
 
-  void _onSelect(BuildContext context, SettingsAction action) {
+  void _onSelect(BuildContext context, SettingsAction action) async {
     Navigator.of(context).pop(); // endDrawer を閉じる
     switch (action) {
       case SettingsAction.import:
         _scanAndImport(context);
         break;
       case SettingsAction.backup:
-        // TODO: ローカル→クラウド バックアップ
+        // TODO: ローカル→クラウド バックアップ（Pro限定）
         break;
       case SettingsAction.restore:
-        // TODO: 復元フロー
+        // TODO: クラウド→ローカル 復元（Pro限定）
         break;
       case SettingsAction.purchasePro:
-        // TODO: 課金フロー（in_app_purchase / storekit / billing）
+        await _handlePurchasePro();
         break;
       case SettingsAction.manageSubscription:
-        // TODO: サブスク管理 or 購入の復元
+        // MVP: 「購入の復元」として使用（非消耗型の復元）
+        await _handleRestore();
         break;
       case SettingsAction.signInOut:
-        // TODO: Google サインイン or サインアウト
+        final messenger = ScaffoldMessenger.of(context);
+        try {
+          // 未ログイン or 匿名 → Googleでログイン
+          if (_user == null || (_user?.isAnonymous ?? true)) {
+            await _auth.signInWithGoogle();
+            messenger.showSnackBar(const SnackBar(content: Text('ログインしました')));
+          } else {
+            // ログイン中 → ログアウト
+            await _auth.signOut();
+            messenger.showSnackBar(const SnackBar(content: Text('ログアウトしました')));
+          }
+        } catch (e) {
+          debugPrint('Error: $e');
+          messenger.showSnackBar(SnackBar(content: Text('認証エラー: $e')));
+        }
         break;
+    }
+  }
+
+  Future<void> _handlePurchasePro() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      await _purchase.buyPro();
+      // 付与はストリーム経由で反映。必要ならトーストを追加。
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('購入エラー: $e')));
+    } finally {
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _handleRestore() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      await _purchase.restore();
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('購入情報を復元しました')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('復元エラー: $e')));
+    } finally {
+      if (mounted) Navigator.of(context).pop();
     }
   }
 
   Widget _buildBody() {
     if (_loading) return const ListLoading();
-    if (_error != null) return ErrorView(message: _error!, onRetry: _reload);
+    if (_error != null) {
+      return ErrorView(message: _error!, onRetry: _reload);
+    }
     if (_decks.isEmpty) return const EmptyView();
 
     return RefreshIndicator(
@@ -218,7 +315,6 @@ class _DeckListPageState extends State<DeckListPage> {
           bottom: 24 + (_adsEnabled ? _kAdBannerHeight : 0),
         ),
         buildDefaultDragHandles: false,
-        // 自前ハンドル
         itemCount: _decks.length,
         onReorder: (oldIndex, newIndex) async {
           setState(() {
@@ -371,10 +467,6 @@ class _DeckListPageState extends State<DeckListPage> {
 
   /// スキャン → import
   Future<void> _scanAndImport(BuildContext context) async {
-    // TODO ローカル仮データインポート用
-    // await _importAndOpen(ImportKey("dev-uid-1234", "82HDP5PV"));
-    // return;
-
     // 1) 説明ダイアログ
     final proceed = await ScanIntroDialog.show(context);
     if (proceed != true) return;
@@ -412,37 +504,55 @@ class _DeckListPageState extends State<DeckListPage> {
 }
 
 class _SettingsDrawer extends StatelessWidget {
-  const _SettingsDrawer({required this.onSelected});
+  const _SettingsDrawer({
+    required this.onSelected,
+    required this.user,
+    required this.isPro,
+  });
 
   final void Function(SettingsAction) onSelected;
+  final User? user;
+  final bool isPro;
 
   @override
   Widget build(BuildContext context) {
-    // TODO ここは実際は状態から取得：isPro, remainingImports など
-    final bool isPro = true;
-    final int remainingImports = 8; // 例：今月残り
+    // 実装では 残回数 は Firestore/RemoteConfig から取得する想定
+    final int remainingImports = 8;
+
+    final isSignedIn = user != null && !(user!.isAnonymous);
+    final photoUrl = user?.photoURL;
+    final displayName =
+        user?.displayName ??
+        (isSignedIn ? 'Googleユーザー' : (isPro ? 'ログインしてください' : 'ゲスト'));
+    final email = user?.email ?? (isSignedIn ? '' : '未ログイン');
 
     return Drawer(
       child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           children: [
-            // ヘッダー（プラン状態）
             ListTile(
-              leading: Icon(isPro ? Icons.workspace_premium : Icons.lock),
-              title: Text(isPro ? 'Proプラン' : '無料プラン'),
+              leading: CircleAvatar(
+                backgroundImage: (photoUrl != null)
+                    ? NetworkImage(photoUrl)
+                    : null,
+                child: (photoUrl == null) ? const Icon(Icons.person) : null,
+              ),
+              title: Text(displayName),
               subtitle: Text(
-                isPro ? '有効期限\n2026年10月22日' : '今月のインポート残り：$remainingImports 回',
+                isSignedIn
+                    ? (email.isNotEmpty ? email : 'ログイン中')
+                    : '今月のインポート残り：$remainingImports 回',
               ),
             ),
             const Divider(),
-            // 操作メニュー
             ListTile(
               leading: const Icon(Icons.download),
               title: const Text('インポート'),
               subtitle: const Text('QR/カメラで単語帳をインポート'),
               onTap: () => onSelected(SettingsAction.import),
             ),
+
             if (isPro) ...[
               const Divider(),
               ListTile(
@@ -458,6 +568,7 @@ class _SettingsDrawer extends StatelessWidget {
                 onTap: () => onSelected(SettingsAction.restore),
               ),
             ],
+
             if (!isPro) ...[
               const Divider(),
               ListTile(
@@ -472,11 +583,12 @@ class _SettingsDrawer extends StatelessWidget {
                 onTap: () => onSelected(SettingsAction.manageSubscription),
               ),
             ],
+
             if (isPro) ...[
               const Divider(),
               ListTile(
-                leading: const Icon(Icons.login),
-                title: Text(isPro ? 'ログアウト' : 'ログイン'),
+                leading: Icon(isSignedIn ? Icons.logout : Icons.login),
+                title: Text(isSignedIn ? 'ログアウト' : 'Googleでログイン'),
                 onTap: () => onSelected(SettingsAction.signInOut),
               ),
             ],
