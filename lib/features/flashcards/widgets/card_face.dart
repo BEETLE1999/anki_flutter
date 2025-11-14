@@ -58,17 +58,25 @@ class _CardFaceState extends State<CardFace> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            // padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(24,24,12,24,),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(0, 6, 0, 32),
               // scrollHeightが取得できたら、固定高さContainerで囲む
               child: Container(
                 height: scrollHeight,
                 alignment: Alignment.center,
-                child: SingleChildScrollView(
-                  primary: false,
-                  key: scrollKey,
-                  child: widget.child,
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  radius: Radius.circular(4),
+                  child: SingleChildScrollView(
+                    primary: false,
+                    key: scrollKey,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: widget.child,
+                    ),
+                  ),
                 ),
               ),
             ),

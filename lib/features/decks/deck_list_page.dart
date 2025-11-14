@@ -18,15 +18,14 @@ import 'widgets/empty_view.dart';
 import 'widgets/error_view.dart';
 import 'widgets/list_loading.dart';
 import 'widgets/scan_intro_dialog.dart';
+// import 'package:cloud_functions/cloud_functions.dart';
 
 /// 設定メニューの項目
 enum SettingsAction {
   import,
-  backup,
-  restore,
   purchasePro,
-  manageSubscription,
-  signInOut,
+  // // TODO
+  // GCFtest,
 }
 
 /// 仮バナーの高さ
@@ -208,6 +207,7 @@ class _DeckListPageState extends State<DeckListPage> {
       endDrawer: _SettingsDrawer(
         user: _user,
         isPro: isPro,
+        // isPro: false,
         onSelected: (a) => _onSelect(context, a),
       ),
       bottomNavigationBar: _adsEnabled
@@ -227,36 +227,16 @@ class _DeckListPageState extends State<DeckListPage> {
       case SettingsAction.import:
         _scanAndImport(context);
         break;
-      case SettingsAction.backup:
-        // TODO: ローカル→クラウド バックアップ（Pro限定）
-        break;
-      case SettingsAction.restore:
-        // TODO: クラウド→ローカル 復元（Pro限定）
-        break;
       case SettingsAction.purchasePro:
         await _handlePurchasePro();
         break;
-      case SettingsAction.manageSubscription:
-        // MVP: 「購入の復元」として使用（非消耗型の復元）
-        await _handleRestore();
-        break;
-      case SettingsAction.signInOut:
-        final messenger = ScaffoldMessenger.of(context);
-        try {
-          // 未ログイン or 匿名 → Googleでログイン
-          if (_user == null || (_user?.isAnonymous ?? true)) {
-            await _auth.signInWithGoogle();
-            messenger.showSnackBar(const SnackBar(content: Text('ログインしました')));
-          } else {
-            // ログイン中 → ログアウト
-            await _auth.signOut();
-            messenger.showSnackBar(const SnackBar(content: Text('ログアウトしました')));
-          }
-        } catch (e) {
-          debugPrint('Error: $e');
-          messenger.showSnackBar(SnackBar(content: Text('認証エラー: $e')));
-        }
-        break;
+      //   // TODO テスト疎通OK
+      // case SettingsAction.GCFtest:
+      //   await _handleRestore();
+      //   final functions = FirebaseFunctions.instanceFor(region: 'asia-northeast1');
+      //   final result = await functions.httpsCallable('hello').call();
+      //   print(result.data);
+      //   break;
     }
   }
 
@@ -274,28 +254,6 @@ class _DeckListPageState extends State<DeckListPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('購入エラー: $e')));
-    } finally {
-      if (mounted) Navigator.of(context).pop();
-    }
-  }
-
-  Future<void> _handleRestore() async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-    try {
-      await _purchase.restore();
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('購入情報を復元しました')));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('復元エラー: $e')));
     } finally {
       if (mounted) Navigator.of(context).pop();
     }
@@ -531,68 +489,40 @@ class _SettingsDrawer extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           children: [
+            // ヘッダー（プラン状態）
             ListTile(
-              leading: CircleAvatar(
-                backgroundImage: (photoUrl != null)
-                    ? NetworkImage(photoUrl)
-                    : null,
-                child: (photoUrl == null) ? const Icon(Icons.person) : null,
-              ),
-              title: Text(displayName),
+              leading: Icon(isPro ? Icons.workspace_premium : Icons.lock),
+              title: Text(isPro ? 'Proプラン' : '無料プラン'),
               subtitle: Text(
-                isSignedIn
-                    ? (email.isNotEmpty ? email : 'ログイン中')
-                    : '今月のインポート残り：$remainingImports 回',
+                isPro ? '有効期限：2026年10月22日' : '今月のインポート残り：$remainingImports/10回',
               ),
             ),
             const Divider(),
+            // 操作メニュー
             ListTile(
               leading: const Icon(Icons.download),
-              title: const Text('インポート'),
+              title: const Text('単語帳インポート'),
               subtitle: const Text('QR/カメラで単語帳をインポート'),
               onTap: () => onSelected(SettingsAction.import),
             ),
-
-            if (isPro) ...[
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.cloud_upload),
-                title: const Text('バックアップ'),
-                subtitle: const Text('端末の全データをクラウドに保存'),
-                onTap: () => onSelected(SettingsAction.backup),
-              ),
-              ListTile(
-                leading: const Icon(Icons.cloud_download),
-                title: const Text('復元'),
-                subtitle: const Text('クラウドから端末へ復元'),
-                onTap: () => onSelected(SettingsAction.restore),
-              ),
-            ],
-
             if (!isPro) ...[
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.shopping_bag),
                 title: const Text('Proプランを購入'),
-                subtitle: const Text('インポート上限解除＆バックアップ機能＆広告非表示'),
+                subtitle: const Text('インポート上限解除＆広告非表示'),
                 onTap: () => onSelected(SettingsAction.purchasePro),
-              ),
-              ListTile(
-                leading: const Icon(Icons.manage_accounts),
-                title: const Text('サブスクリプション管理 / 購入を復元'),
-                onTap: () => onSelected(SettingsAction.manageSubscription),
-              ),
-            ],
-
-            if (isPro) ...[
-              const Divider(),
-              ListTile(
-                leading: Icon(isSignedIn ? Icons.logout : Icons.login),
-                title: Text(isSignedIn ? 'ログアウト' : 'Googleでログイン'),
-                onTap: () => onSelected(SettingsAction.signInOut),
               ),
             ],
             const SizedBox(height: 16),
+            // // TODO テスト　↓
+            // const Divider(),
+            // ListTile(
+            //   leading: Icon(Icons.access_time),
+            //   title: Text('GCFテスト'),
+            //   onTap: () => onSelected(SettingsAction.GCFtest),
+            // ),
+            // // TODO テスト　↑
           ],
         ),
       ),
