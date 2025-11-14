@@ -27,12 +27,18 @@ class CardFace extends StatefulWidget {
 
 class _CardFaceState extends State<CardFace> {
   final scrollKey = GlobalKey();
+  final _scrollController = ScrollController();
   double? scrollHeight;
+
+  @override
+  void dispose() {
+    _scrollController.dispose(); // ← 忘れずに
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
-
     // 描画完了後に高さ取得
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ctx = scrollKey.currentContext;
@@ -58,22 +64,22 @@ class _CardFaceState extends State<CardFace> {
             borderRadius: BorderRadius.circular(20),
           ),
           child: Padding(
-            // padding: const EdgeInsets.all(24),
-            padding: const EdgeInsets.fromLTRB(24,24,12,24,),
+            padding: const EdgeInsets.fromLTRB(24, 24, 8, 24),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(0, 6, 0, 32),
-              // scrollHeightが取得できたら、固定高さContainerで囲む
               child: Container(
                 height: scrollHeight,
                 alignment: Alignment.center,
                 child: Scrollbar(
+                  controller: _scrollController,
                   thumbVisibility: true,
                   radius: Radius.circular(4),
                   child: SingleChildScrollView(
+                    controller: _scrollController,
                     primary: false,
                     key: scrollKey,
                     child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.only(right: 12),
                       child: widget.child,
                     ),
                   ),
