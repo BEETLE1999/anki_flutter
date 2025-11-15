@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../core/auth/auth_service.dart';
+import '../../core/entitlements/entitlements_service.dart';
+import '../../core/entitlements/model/entitlements.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/purchase/purchase_service.dart';
 import '../../data/local/hive_deck_repository.dart';
@@ -18,15 +20,9 @@ import 'widgets/empty_view.dart';
 import 'widgets/error_view.dart';
 import 'widgets/list_loading.dart';
 import 'widgets/scan_intro_dialog.dart';
-// import 'package:cloud_functions/cloud_functions.dart';
 
 /// 設定メニューの項目
-enum SettingsAction {
-  import,
-  purchasePro,
-  // // TODO
-  // GCFtest,
-}
+enum SettingsAction { import, purchasePro }
 
 /// 仮バナーの高さ
 const double _kAdBannerHeight = 60;
@@ -56,12 +52,15 @@ class _DeckListPageState extends State<DeckListPage> {
   User? _user;
   late final Stream<User?> _authStream;
 
-  // 課金
-  late final PurchaseService _purchase;
-
   bool _loading = true;
   String? _error;
   List<Deck> _decks = [];
+
+  // 課金
+  late final PurchaseService _purchase;
+
+  Entitlements _entitlements = Entitlements.free;
+  late final Future<Entitlements> _entitlementsFuture;
 
   @override
   void initState() {
@@ -79,6 +78,15 @@ class _DeckListPageState extends State<DeckListPage> {
     });
     // 任意：未ログインなら匿名で入れておくとUXがよい
     _auth.signInAnonymouslyIfNeeded();
+
+    // Pro / Free を Cloud Functions 経由で取得
+    _entitlementsFuture = EntitlementsService.instance.fetch();
+    _entitlementsFuture.then((e) {
+      if (!mounted) return;
+      setState(() {
+        _entitlements = e;
+      });
+    });
 
     _load();
   }
@@ -183,7 +191,9 @@ class _DeckListPageState extends State<DeckListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final isPro = _purchase.isPro;
+    // purchase → entitlements 同期をやっていない間だけ、保険で OR にする
+    final isPro = _entitlements.isPro || _purchase.isPro;
+    final validUntil = _entitlements.validUntil;
     _adsEnabled = !isPro;
 
     return Scaffold(
@@ -207,7 +217,7 @@ class _DeckListPageState extends State<DeckListPage> {
       endDrawer: _SettingsDrawer(
         user: _user,
         isPro: isPro,
-        // isPro: false,
+        validUntil: validUntil,
         onSelected: (a) => _onSelect(context, a),
       ),
       bottomNavigationBar: _adsEnabled
@@ -230,13 +240,6 @@ class _DeckListPageState extends State<DeckListPage> {
       case SettingsAction.purchasePro:
         await _handlePurchasePro();
         break;
-      //   // TODO テスト疎通OK
-      // case SettingsAction.GCFtest:
-      //   await _handleRestore();
-      //   final functions = FirebaseFunctions.instanceFor(region: 'asia-northeast1');
-      //   final result = await functions.httpsCallable('hello').call();
-      //   print(result.data);
-      //   break;
     }
   }
 
@@ -466,24 +469,18 @@ class _SettingsDrawer extends StatelessWidget {
     required this.onSelected,
     required this.user,
     required this.isPro,
+    this.validUntil,
   });
 
   final void Function(SettingsAction) onSelected;
   final User? user;
   final bool isPro;
+  final DateTime? validUntil;
 
   @override
   Widget build(BuildContext context) {
     // 実装では 残回数 は Firestore/RemoteConfig から取得する想定
     final int remainingImports = 8;
-
-    final isSignedIn = user != null && !(user!.isAnonymous);
-    final photoUrl = user?.photoURL;
-    final displayName =
-        user?.displayName ??
-        (isSignedIn ? 'Googleユーザー' : (isPro ? 'ログインしてください' : 'ゲスト'));
-    final email = user?.email ?? (isSignedIn ? '' : '未ログイン');
-
     return Drawer(
       child: SafeArea(
         child: ListView(
@@ -494,7 +491,9 @@ class _SettingsDrawer extends StatelessWidget {
               leading: Icon(isPro ? Icons.workspace_premium : Icons.lock),
               title: Text(isPro ? 'Proプラン' : '無料プラン'),
               subtitle: Text(
-                isPro ? '有効期限：2026年10月22日' : '今月のインポート残り：$remainingImports/10回',
+                isPro
+                    ? _formatValidUntil(validUntil)
+                    : '今月のインポート残り：$remainingImports/10回',
               ),
             ),
             const Divider(),
@@ -515,17 +514,21 @@ class _SettingsDrawer extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 16),
-            // // TODO テスト　↓
-            // const Divider(),
-            // ListTile(
-            //   leading: Icon(Icons.access_time),
-            //   title: Text('GCFテスト'),
-            //   onTap: () => onSelected(SettingsAction.GCFtest),
-            // ),
-            // // TODO テスト　↑
           ],
         ),
       ),
     );
+  }
+
+  String _formatValidUntil(DateTime? dt) {
+    if (dt == null) {
+      return '有効期限：未設定';
+    }
+
+    final y = dt.year;
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+
+    return '有効期限：$y年$m月$d日';
   }
 }

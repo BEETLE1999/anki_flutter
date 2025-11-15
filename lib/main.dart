@@ -1,7 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'core/auth/auth_service.dart';
+import 'core/entitlements/entitlements_service.dart';
 import 'core/purchase/purchase_service.dart';
 
 import 'core/theme/app_theme.dart';
@@ -10,13 +12,11 @@ import 'features/decks/deck_list_page.dart';
 import 'firebase_options.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  await FirebaseAppCheck.instance.activate();
   await FirebaseAppCheck.instance.activate(
     providerAndroid: kReleaseMode
         ? const AndroidPlayIntegrityProvider() // 本番：Play Integrity
@@ -31,9 +31,16 @@ Future<void> main() async {
   await auth.signInAnonymouslyIfNeeded();
   // 課金サービス初期化
   await PurchaseService.instance.init();
+  // Pro 情報を先に取っておく（失敗してもとりあえず free 扱い）
+  try {
+    final ent = await EntitlementsService.instance.fetch();
+    debugPrint('[Entitlements] isPro=${ent.isPro}, plan=${ent.plan}');
+  } catch (e) {
+    debugPrint('[Entitlements] fetch error: $e');
+  }
 
-  // TODO
-  debugFirebaseTargets();
+  // // TODO
+  // debugFirebaseTargets();
 
   runApp(const AnkiApp());
 }
